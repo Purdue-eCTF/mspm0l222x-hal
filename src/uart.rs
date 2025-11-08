@@ -24,32 +24,37 @@ pub struct Uart {
     regs: Uart0,
 }
 
-impl Uart {
-    pub fn new(uart: Uart0) -> Self {
-        if !UART_SETUP.load(Ordering::SeqCst) {
-            // 16x oversampling
-            uart.uart0_ctl0().write(|w| w.hse().ovs16());
-            // TODO: check that this clock is correct
-            uart.uart0_clksel().write(|w| w.busclk_sel().set_bit());
-
-            // set baud rate
-            uart.uart0_ibrd()
-                .write(|w| unsafe { w.divint().bits(UART_IBRD) });
-            uart.uart0_fbrd()
-                .write(|w| unsafe { w.divfrac().bits(UART_FBRD) });
-
-            // disable parity, 8-bit data, 1 stop bit
-            uart.uart0_lcrh()
-                .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
-
-            // enable fifo and enable peripheral
-            uart.uart0_ctl0().write(|w| w.fen().set_bit());
-            uart.uart0_ctl0().write(|w| w.enable().set_bit());
-
-            UART_SETUP.store(true, Ordering::SeqCst);
-        }
-        Self { regs: uart }
+pub fn new(uart: Uart0) -> Self {
+    if !UART_SETUP.load(Ordering::SeqCst) {
+        // Disable UART before configuration
+        uart.uart0_ctl0().write(|w| w.enable().clear_bit());
+        
+        // Select clock source (BUSCLK)
+        uart.uart0_clksel().write(|w| w.busclk_sel().set_bit());
+        
+        // Set baud rate divisors
+        uart.uart0_ibrd()
+            .write(|w| unsafe { w.divint().bits(UART_IBRD) });
+        uart.uart0_fbrd()
+            .write(|w| unsafe { w.divfrac().bits(UART_FBRD) });
+        
+        // Configure line control (MUST be after baud rate)
+        uart.uart0_lcrh()
+            .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
+        
+        // Enable UART with all settings
+        uart.uart0_ctl0().write(|w| {
+            w.hse().ovs16()       // 16x oversampling
+             .fen().set_bit()     // Enable FIFOs
+             .txe().set_bit()     // Enable transmitter
+             .rxe().set_bit()     // Enable receiver
+             .enable().set_bit()  // Enable UART
+        });
+        
+        UART_SETUP.store(true, Ordering::SeqCst);
     }
+    Self { regs: uart }
+}
 
     pub fn write_bytes(&self, bytes: &[u8]) {
         let mut bytes = bytes;
