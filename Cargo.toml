@@ -1,11 +1,11 @@
 [package]
 name = "mspm0l222x-hal"
 version = "0.1.0"
-authors = ["SIGPwny <hello@sigpwny.com>", "Minh Duong <hello@whitehoodhacker.net>"]
+authors = ["ctf@purdue.edu"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A Hardware Abstraction Layer for the Texas Instruments MSPM0L222X microcontroller family"
-repository = "https://github.com/sigpwny/mspm0l222x-hal"
+repository = "https://github.com/Purdue-eCTF/mspm0l222x-hal"
 readme = "README.md"
 keywords = ["mspm0l2228", "embedded-hal", "arm", "cortex-m"]
 categories = ["embedded", "hardware-support", "no-std", "no-std::no-alloc"]
@@ -14,12 +14,12 @@ categories = ["embedded", "hardware-support", "no-std", "no-std::no-alloc"]
 targets = ["thumbv6m-none-eabi"]
 
 [dependencies]
-cortex-m = "0.7.7"
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7.5"
 embedded-hal = "1.0.0"
 embedded-hal-nb = "1.0.0"
 embedded-io = "0.6.1"
-mspm0l222x-pac = "0.1.0"
+mspm0l222x-pac = { path = "../mspm0l222x-pac" }
 paste = "1.0.15"
 rand_core = { version = "0.9.3", default-features = false, optional = true }
 
