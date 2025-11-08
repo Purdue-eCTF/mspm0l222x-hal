@@ -25,7 +25,7 @@ pub struct Uart {
 }
 
 impl Uart {
-    pub(crate) fn new(uart: Uart0) -> Self {
+    pub fn new(uart: Uart0) -> Self {
         if !UART_SETUP.load(Ordering::SeqCst) {
             // 16x oversampling
             uart.uart0_ctl0().write(|w| w.hse().ovs16());
