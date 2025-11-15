@@ -1,13 +1,110 @@
-// /* Defines for USER_LED_1: GPIOA.23 with pinCMx 67 on package pin 72 */
-// #define GPIO_LEDS_USER_LED_1_PORT                                        (GPIOA)
-// #define GPIO_LEDS_USER_LED_1_PIN                                (DL_GPIO_PIN_23)
-// #define GPIO_LEDS_USER_LED_1_IOMUX                               (IOMUX_PINCM67)
-// /* Defines for USER_LED_2: GPIOB.10 with pinCMx 31 on package pin 34 */
-// #define GPIO_LEDS_USER_LED_2_PORT                                        (GPIOB)
-// #define GPIO_LEDS_USER_LED_2_PIN                                (DL_GPIO_PIN_10)
-// #define GPIO_LEDS_USER_LED_2_IOMUX                               (IOMUX_PINCM31)
-// /* Defines for USER_LED_3: GPIOB.9 with pinCMx 30 on package pin 33 */
-// #define GPIO_LEDS_USER_LED_3_PORT                                        (GPIOB)
-// #define GPIO_LEDS_USER_LED_3_PIN                                 (DL_GPIO_PIN_9)
-// #define GPIO_LEDS_USER_LED_3_IOMUX                               (IOMUX_PINCM30)
+use mspm0l222x_pac::{Gpioa, Gpiob, Iomux};
 
+pub struct Led {
+    iomux: Iomux,
+    gpioa: Gpioa,
+    gpiob: Gpiob,
+}
+
+pub enum LedColor {
+    Red,
+    Blue,
+    Green,
+}
+
+impl Led {
+    pub fn new(iomux: Iomux, gpioa: Gpioa, gpiob: Gpiob) -> Self {
+        let res = Self {
+            iomux,
+            gpioa,
+            gpiob,
+        };
+
+        // power on GPIOs
+        res.gpioa
+            .gpioa_gprcm(16 - 1)
+            .gpioa_rstctl()
+            .write(|w| w.resetassert().set_bit().resetstkyclr().clr());
+        res.gpiob
+            .gpiob_gprcm(10 - 1)
+            .gpiob_rstctl()
+            .write(|w| w.resetassert().set_bit().resetstkyclr().clr());
+        res.gpiob
+            .gpiob_gprcm(9 - 1)
+            .gpiob_rstctl()
+            .write(|w| w.resetassert().set_bit().resetstkyclr().clr());
+
+        res.gpioa
+            .gpioa_gprcm(16 - 1)
+            .gpioa_pwren()
+            .write(|w| w.enable().set_bit());
+        res.gpiob
+            .gpiob_gprcm(10 - 1)
+            .gpiob_pwren()
+            .write(|w| w.enable().set_bit());
+        res.gpiob
+            .gpiob_gprcm(9 - 1)
+            .gpiob_pwren()
+            .write(|w| w.enable().set_bit());
+        // delay while GPIOs power on
+        for _ in core::hint::black_box(0..32) {}
+
+        // enable IOMUX output and set function to 1 (GPIO)
+        // PINCM42 -> PA16
+        // PINCM30 -> PB9
+        // PINCM31 -> PB10
+
+        // TODO: offset by 1 or no? pa0 maps to pincm1 so probably yes?
+        res.iomux
+            .iomux_pincm(42 - 1)
+            .write(|w| unsafe { w.pc().set_bit().pf().bits(1) });
+        res.iomux
+            .iomux_pincm(30 - 1)
+            .write(|w| unsafe { w.pc().set_bit().pf().bits(1) });
+        res.iomux
+            .iomux_pincm(31 - 1)
+            .write(|w| unsafe { w.pc().set_bit().pf().bits(1) });
+
+        // clear pins
+        res.gpioa.gpioa_doutclr31_0().write(|w| w.dio16().set_bit());
+        res.gpiob
+            .gpiob_doutclr31_0()
+            .write(|w| w.dio10().set_bit().dio10().set_bit());
+        res.gpiob
+            .gpiob_doutclr31_0()
+            .write(|w| w.dio10().set_bit().dio9().set_bit());
+
+        // enable output
+        res.gpioa.gpioa_doeset31_0().write(|w| w.dio16().set_bit());
+        res.gpiob
+            .gpiob_doeset31_0()
+            .write(|w| w.dio9().set_bit().dio10().set_bit());
+        res.gpiob
+            .gpiob_doeset31_0()
+            .write(|w| w.dio9().set_bit().dio9().set_bit());
+
+        res
+    }
+    pub fn set(&self, color: LedColor) {
+        match color {
+            LedColor::Blue => self.gpioa.gpioa_dout19_16().write(|w| w.dio16().set_bit()),
+            LedColor::Red => self.gpiob.gpiob_dout11_8().write(|w| w.dio10().set_bit()),
+            LedColor::Green => self.gpiob.gpiob_dout11_8().write(|w| w.dio9().set_bit()),
+        };
+    }
+
+    pub fn clear(&self, color: LedColor) {
+        // from LP-MSPM0L2228 docs:
+        // PA16 -> blue
+        // PB10 -> red
+        // PB09 -> green
+        match color {
+            LedColor::Blue => self
+                .gpioa
+                .gpioa_dout19_16()
+                .write(|w| w.dio16().clear_bit()),
+            LedColor::Red => self.gpiob.gpiob_dout11_8().write(|w| w.dio10().clear_bit()),
+            LedColor::Green => self.gpiob.gpiob_dout11_8().write(|w| w.dio9().clear_bit()),
+        };
+    }
+}

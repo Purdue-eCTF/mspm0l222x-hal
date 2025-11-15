@@ -1,6 +1,6 @@
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, Ordering};
-use mspm0l222x_pac::Uart0;
+use mspm0l222x_pac::{Iomux, Uart0};
 
 static UART_SETUP: AtomicBool = AtomicBool::new(false);
 
@@ -23,38 +23,66 @@ const UART_FBRD: u8 = const {
 pub struct Uart {
     regs: Uart0,
 }
+impl Uart {
+    pub fn new(uart: Uart0, iomux: Iomux) -> Self {
+        if !UART_SETUP.load(Ordering::SeqCst) {
+            // set up IOMUX to output
+            iomux
+                .iomux_pincm(25 - 1)
+                .write(|w| unsafe { w.pf().bits(2) });
 
-pub fn new(uart: Uart0) -> Self {
-    if !UART_SETUP.load(Ordering::SeqCst) {
-        // Disable UART before configuration
-        uart.uart0_ctl0().write(|w| w.enable().clear_bit());
-        
-        // Select clock source (BUSCLK)
-        uart.uart0_clksel().write(|w| w.busclk_sel().set_bit());
-        
-        // Set baud rate divisors
-        uart.uart0_ibrd()
-            .write(|w| unsafe { w.divint().bits(UART_IBRD) });
-        uart.uart0_fbrd()
-            .write(|w| unsafe { w.divfrac().bits(UART_FBRD) });
-        
-        // Configure line control (MUST be after baud rate)
-        uart.uart0_lcrh()
-            .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
-        
-        // Enable UART with all settings
-        uart.uart0_ctl0().write(|w| {
-            w.hse().ovs16()       // 16x oversampling
-             .fen().set_bit()     // Enable FIFOs
-             .txe().set_bit()     // Enable transmitter
-             .rxe().set_bit()     // Enable receiver
-             .enable().set_bit()  // Enable UART
-        });
-        
-        UART_SETUP.store(true, Ordering::SeqCst);
+            iomux
+                .iomux_pincm(26 - 1)
+                .write(|w| unsafe { w.pf().bits(2) });
+
+            // Disable UART before configuration
+            //#define LCD_RSTCTL_KEY_UNLOCK_W ((uint32_t)0xB1000000U)
+            //#define LCD_PWREN_KEY_UNLOCK_W ((uint32_t)0x26000000U)
+            uart.uart0_gprcm(0).uart0_rstctl().write(|w| unsafe {
+                w.bits(0xB1000000)
+                    .resetassert()
+                    .assert()
+                    .resetstkyclr()
+                    .clr()
+            });
+            uart.uart0_gprcm(0)
+                .uart0_pwren()
+                .write(|w| unsafe { w.bits(0x26000000).enable().set_bit() });
+
+            // TODO: wait several cycles?
+            // Select clock source (BUSCLK)
+            uart.uart0_clksel().write(|w| w.busclk_sel().set_bit());
+
+            // Set baud rate divisors
+            uart.uart0_ibrd()
+                .write(|w| unsafe { w.divint().bits(UART_IBRD) });
+            uart.uart0_fbrd()
+                .write(|w| unsafe { w.divfrac().bits(UART_FBRD) });
+
+            // disable UART
+            uart.uart0_ctl0().write(|w| w.enable().clear_bit());
+            // set all UART settings
+            uart.uart0_ctl0().write(|w| {
+                w.hse()
+                    .ovs16() // 16x oversampling
+                    .fen()
+                    .set_bit() // Enable FIFOs
+                    .txe()
+                    .set_bit() // Enable transmitter
+                    .rxe()
+                    .set_bit() // Enable receiver
+            });
+            // Configure line control
+            uart.uart0_lcrh()
+                .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
+
+            // enable UART
+            uart.uart0_ctl0().write(|w| w.enable().set_bit());
+
+            UART_SETUP.store(true, Ordering::SeqCst);
+        }
+        Self { regs: uart }
     }
-    Self { regs: uart }
-}
 
     pub fn write_bytes(&self, bytes: &[u8]) {
         let mut bytes = bytes;
@@ -76,16 +104,9 @@ pub fn new(uart: Uart0) -> Self {
     }
 }
 
-pub struct UartWriter(Uart);
-
-impl UartWriter {
-    pub fn new(uart: Uart0) -> Self {
-        Self(Uart::new(uart))
-    }
-}
-impl Write for UartWriter {
+impl Write for Uart {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.0.write_bytes(s.as_bytes());
+        self.write_bytes(s.as_bytes());
 
         Ok(())
     }
