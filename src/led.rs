@@ -26,14 +26,14 @@ impl Led {
         res.gpioa.gpioa_gprcm(0).gpioa_rstctl().write(|w| {
             unsafe { w.bits(0xB1000000) }
                 .resetassert()
-                .set_bit()
+                .assert()
                 .resetstkyclr()
                 .clr()
         });
         res.gpiob.gpiob_gprcm(0).gpiob_rstctl().write(|w| {
             unsafe { w.bits(0xB1000000) }
                 .resetassert()
-                .set_bit()
+                .assert()
                 .resetstkyclr()
                 .clr()
         });
