@@ -15,7 +15,7 @@ pub struct Uart {
     regs: Uart0,
 }
 impl Uart {
-    pub fn new(uart: Uart0, iomux: Iomux) -> Self {
+    pub fn new(iomux: &mut Iomux, uart: Uart0) -> Self {
         if !UART_SETUP.load(Ordering::SeqCst) {
             // set up IOMUX to output
             iomux
@@ -82,7 +82,7 @@ impl Uart {
 
     pub fn write_bytes(&self, bytes: &[u8]) {
         let mut bytes = bytes;
-        while let ([head], tail) = bytes.split_at(1) {
+        while let [head, tail @ ..] = bytes {
             if self.regs.uart0_stat().read().txff().bit_is_clear() {
                 self.regs
                     .uart0_txdata()
@@ -97,6 +97,10 @@ impl Uart {
             while self.regs.uart0_stat().read().rxfe().bit_is_clear() {}
             *b = self.regs.uart0_rxdata().read().data().bits();
         }
+    }
+
+    pub fn busy(&self) -> bool {
+        self.regs.uart0_stat().read().busy().bit_is_set()
     }
 }
 
