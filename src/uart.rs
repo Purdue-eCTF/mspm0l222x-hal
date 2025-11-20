@@ -46,7 +46,6 @@ impl Uart {
             // Select clock source (BUSCLK) and divisor
             uart.uart0_clksel().write(|w| w.busclk_sel().set_bit());
             uart.uart0_clkdiv().write(|w| w.ratio().div_by_1());
-
             // disable UART
             uart.uart0_ctl0().write(|w| w.enable().clear_bit());
             // set all UART settings
@@ -60,6 +59,8 @@ impl Uart {
                     .enable() // Enable transmitter
                     .rxe()
                     .enable() // Enable receiver
+                    .mode()
+                    .uart() // TODO: surely this isn't necessary
             });
 
             // Set baud rate divisors
@@ -95,6 +96,15 @@ impl Uart {
     pub fn read_bytes(&self, bytes: &mut [u8]) {
         for b in bytes.iter_mut() {
             while self.regs.uart0_stat().read().rxfe().bit_is_clear() {}
+            let result = self.regs.uart0_rxdata().read();
+            if result.brkerr().bit_is_set()
+                || result.frmerr().bit_is_set()
+                || result.nerr().bit_is_set()
+                || result.ovrerr().bit_is_set()
+                || result.parerr().bit_is_set()
+            {
+                panic!("UART error");
+            }
             *b = self.regs.uart0_rxdata().read().data().bits();
         }
     }
