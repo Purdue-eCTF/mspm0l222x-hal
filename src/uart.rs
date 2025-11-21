@@ -20,17 +20,17 @@ use mspm0l222x_pac::uart0::uart0_ctl0::{Ctsen, Fen, Hse, Mode, Rtsen, Rxe, Txe};
 use mspm0l222x_pac::uart0::uart0_lcrh::{Pen, Stp2, Wlen};
 
 pub struct UartOptions {
-    hse: Hse,
-    fen: Fen,
-    txe: Txe,
-    rxe: Rxe,
-    mode: Mode,
-    ctsen: Ctsen,
-    rtsen: Rtsen,
-    uart_freq: u32,
-    pen: Pen,
-    wlen: Wlen,
-    stp2: Stp2,
+    pub hse: Hse,
+    pub fen: Fen,
+    pub txe: Txe,
+    pub rxe: Rxe,
+    pub mode: Mode,
+    pub ctsen: Ctsen,
+    pub rtsen: Rtsen,
+    pub uart_freq: u32,
+    pub pen: Pen,
+    pub wlen: Wlen,
+    pub stp2: Stp2,
 }
 
 impl Default for UartOptions {
