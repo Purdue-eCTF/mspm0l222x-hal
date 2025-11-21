@@ -1,8 +1,10 @@
 use mspm0l222x_pac::{Gpioa, Gpiob, Iomux};
 
-pub struct Led {
-    gpioa: Gpioa,
-    gpiob: Gpiob,
+use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
+
+pub struct Led<'a> {
+    gpioa: &'a Gpioa,
+    gpiob: &'a Gpiob,
 }
 
 pub enum LedColor {
@@ -11,46 +13,69 @@ pub enum LedColor {
     Green,
 }
 
-impl Led {
-    pub fn new(iomux: &mut Iomux, gpioa: Gpioa, gpiob: Gpiob) -> Self {
-        let res = Self { gpioa, gpiob };
+pub enum GpioBank<'a> {
+    GpioA(&'a Gpioa),
+    GpioB(&'a Gpiob),
+}
 
+pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
+    assert!(pin < 32, "pins >= 32 not implemented");
+    match bank {
+        GpioBank::GpioA(gpioa) => {
+            gpioa.gpioa_gprcm(0).gpioa_rstctl().write(|w| {
+                unsafe { w.bits(RSTCTL_WRITE_KEY) }
+                    .resetassert()
+                    .assert()
+                    .resetstkyclr()
+                    .clr()
+            });
+            gpioa
+                .gpioa_gprcm(0)
+                .gpioa_pwren()
+                .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
+            // wait for GPIO to turn on
+            for _ in core::hint::black_box(0..32) {}
+            gpioa
+                .gpioa_doutclr31_0()
+                .write(|w| unsafe { w.bits(1 << pin) });
+            gpioa
+                .gpioa_doeset31_0()
+                .write(|w| unsafe { w.bits(1 << pin) });
+        }
+        GpioBank::GpioB(gpiob) => {
+            gpiob.gpiob_gprcm(0).gpiob_rstctl().write(|w| {
+                unsafe { w.bits(RSTCTL_WRITE_KEY) }
+                    .resetassert()
+                    .assert()
+                    .resetstkyclr()
+                    .clr()
+            });
+            gpiob
+                .gpiob_gprcm(0)
+                .gpiob_pwren()
+                .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
+            // wait for GPIO to turn on
+            for _ in core::hint::black_box(0..32) {}
+            gpiob
+                .gpiob_doutclr31_0()
+                .write(|w| unsafe { w.bits(1 << pin) });
+            gpiob
+                .gpiob_doeset31_0()
+                .write(|w| unsafe { w.bits(1 << pin) });
+        }
+    }
+}
+
+impl<'a> Led<'a> {
+    pub fn new(iomux: &Iomux, gpioa: &'a Gpioa, gpiob: &'a Gpiob) -> Self {
         // #define GPIO_RSTCTL_KEY_UNLOCK_W ((uint32_t)0xB1000000U)
         // #define GPIO_PWREN_KEY_UNLOCK_W ((uint32_t)0x26000000U)
-        // power on GPIO bank A and B
-        res.gpioa.gpioa_gprcm(0).gpioa_rstctl().write(|w| {
-            unsafe { w.bits(0xB1000000) }
-                .resetassert()
-                .assert()
-                .resetstkyclr()
-                .clr()
-        });
-        res.gpiob.gpiob_gprcm(0).gpiob_rstctl().write(|w| {
-            unsafe { w.bits(0xB1000000) }
-                .resetassert()
-                .assert()
-                .resetstkyclr()
-                .clr()
-        });
-
-        res.gpioa
-            .gpioa_gprcm(0)
-            .gpioa_pwren()
-            .write(|w| unsafe { w.bits(0x26000000) }.enable().set_bit());
-        res.gpiob
-            .gpiob_gprcm(0)
-            .gpiob_pwren()
-            .write(|w| unsafe { w.bits(0x26000000) }.enable().set_bit());
-        // delay while GPIOs power on
-        // TODO: how many cycles to delay?
-        for _ in core::hint::black_box(0..32) {}
 
         // enable IOMUX output and set function to 1 (GPIO)
         // PINCM42 -> PA16
         // PINCM30 -> PB9
         // PINCM31 -> PB10
 
-        // TODO: offset by 1 or no? pa0 maps to pincm1 so probably yes?
         iomux
             .iomux_pincm(42 - 1)
             .write(|w| unsafe { w.pc().set_bit().pf().bits(1) });
@@ -61,16 +86,11 @@ impl Led {
             .iomux_pincm(31 - 1)
             .write(|w| unsafe { w.pc().set_bit().pf().bits(1) });
 
-        // clear pins
-        res.gpioa.gpioa_doutclr31_0().write(|w| w.dio16().clr());
-        res.gpiob.gpiob_doutclr31_0().write(|w| w.dio10().clr());
-        res.gpiob.gpiob_doutclr31_0().write(|w| w.dio9().clr());
+        enable_gpio(&mut GpioBank::GpioA(&gpioa), 16);
+        enable_gpio(&mut GpioBank::GpioB(&gpiob), 10);
+        enable_gpio(&mut GpioBank::GpioB(&gpiob), 9);
 
-        // enable output
-        res.gpioa.gpioa_doeset31_0().write(|w| w.dio16().set_());
-        res.gpiob.gpiob_doeset31_0().write(|w| w.dio10().set_());
-        res.gpiob.gpiob_doeset31_0().write(|w| w.dio9().set_());
-
+        let res = Self { gpioa, gpiob };
         res
     }
     pub fn set(&self, color: LedColor) {
