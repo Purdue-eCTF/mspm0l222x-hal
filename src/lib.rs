@@ -2,6 +2,7 @@
 pub mod iomux;
 pub mod led;
 pub mod uart;
+pub mod trng;
 
 // clock speeds of base clocks
 pub const SYSOSC_FREQUENCY: u32 = 32_000_000;
@@ -13,3 +14,4 @@ pub const PWREN_WRITE_KEY: u32 = 0x26000000;
 pub const RSTCTL_WRITE_KEY: u32 = 0xB1000000;
 
 pub use mspm0l222x_pac::{self, Peripherals};
+pub use trng::Trng;
