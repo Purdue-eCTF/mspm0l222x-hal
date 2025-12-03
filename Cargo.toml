@@ -20,6 +20,9 @@ embedded-hal = "1.0.0"
 embedded-hal-nb = "1.0.0"
 embedded-io = "0.6.1"
 mspm0l222x-pac = { path = "../mspm0l222x-pac" }
+once_cell = { version = "1.21.3", default-features = false, features = [
+    "critical-section",
+] }
 paste = "1.0.15"
 rand_core = { version = "0.9.3", default-features = false, optional = true }
 
