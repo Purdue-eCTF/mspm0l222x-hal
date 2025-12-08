@@ -30,3 +30,10 @@ rand_core = { version = "0.9.3", default-features = false, optional = true }
 default = ["rand", "rt"]
 rand = ["dep:rand_core"]
 rt = ["mspm0l222x-pac/critical-section", "mspm0l222x-pac/rt"]
+
+[profile.dev.package.mspm0l222x-pac]
+rustflags = ["-Zhint-mostly-unused"]
+
+
+[profile.release.package.mspm0l222x-pac]
+rustflags = ["-Zhint-mostly-unused"]
