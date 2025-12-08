@@ -3,9 +3,10 @@ use cortex_m::asm::nop;
 use mspm0l222x_pac::{Iomux, Uart0};
 use once_cell::sync::OnceCell;
 
+use crate::cursor::Cursor;
 use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
-const UART_FREQUENCY: u32 = 115200;
+const UART_FREQUENCY: u32 = 9600;
 const TX_IOMUX: usize = 25 - 1;
 const RX_IOMUX: usize = 26 - 1;
 
@@ -42,7 +43,7 @@ impl Default for UartOptions {
         Self {
             hse: mspm0l222x_pac::uart0::uart0_ctl0::Hse::Ovs16,
             fen: Fen::Enable,
-            txe: Txe::Disable,
+            txe: Txe::Enable,
             rxe: Rxe::Enable,
             mode: Mode::Uart,
             ctsen: Ctsen::Disable,
@@ -68,15 +69,6 @@ impl Uart {
     }
 
     fn new_with_config(opts: UartOptions, iomux: &Iomux, uart: Uart0) -> Self {
-        // set up IOMUX to output
-        iomux
-            .iomux_pincm(TX_IOMUX)
-            .write(|w| unsafe { w.pf().bits(2) });
-
-        iomux
-            .iomux_pincm(RX_IOMUX)
-            .write(|w| unsafe { w.pf().bits(2) });
-
         // Disable UART before configuration
         uart.uart0_gprcm(0).uart0_rstctl().write(|w| {
             unsafe { w.bits(RSTCTL_WRITE_KEY) }
@@ -90,7 +82,17 @@ impl Uart {
             .uart0_pwren()
             .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
         // TODO: wait several cycles? does this need to be changed?
-        for _ in core::hint::black_box(0..32) {}
+        for _ in core::hint::black_box(0..32) {
+            nop();
+        }
+
+        // set up IOMUX to output
+        iomux
+            .iomux_pincm(TX_IOMUX)
+            .write(|w| unsafe { w.pf().bits(2).pc().connected() });
+        iomux
+            .iomux_pincm(RX_IOMUX)
+            .write(|w| unsafe { w.pf().bits(2).pc().connected() });
 
         // disable UART
         uart.uart0_ctl0().write(|w| w.enable().clear_bit());
@@ -122,8 +124,6 @@ impl Uart {
                 .variant(opts.ctsen)
                 .rtsen()
                 .variant(opts.rtsen)
-                .txd_out_en()
-                .enable()
         });
 
         // Configure line control
@@ -157,7 +157,7 @@ impl Uart {
             }
         }
         // wait for data to flush
-        while self.regs.uart0_stat().read().txfe().bit_is_clear() {
+        while self.regs.uart0_stat().read().txfe().is_cleared() {
             nop();
         }
     }
@@ -188,10 +188,27 @@ impl Uart {
     }
 }
 
-impl<'a> Write for Uart {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_bytes(s.as_bytes());
+pub fn write_debug_format(args: fmt::Arguments) {
+    let mut message_buf = [0; 256];
 
-        Ok(())
-    }
+    let mut cursor = Cursor::new(&mut message_buf);
+    cursor.write_fmt(args).unwrap();
+    let message_len = cursor.offset;
+
+    uart().write_bytes(&message_buf[..message_len]);
 }
+
+/// Prints to the uart port
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::uart::write_debug_format(format_args!($($arg)*)));
+}
+
+/// Prints to the uart port
+#[macro_export]
+macro_rules! println {
+    () => ($crate::uart::print!("\n"));
+    ($($arg:tt)*) => ($crate::uart::print!("{}\n", format_args!($($arg)*)));
+}
+
+pub use {print, println};
