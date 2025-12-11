@@ -26,6 +26,7 @@ once_cell = { version = "1.21.3", default-features = false, features = [
 ] }
 paste = "1.0.15"
 rand_core = { version = "0.9.3", default-features = false, optional = true }
+thiserror = { version = "2.0.17", default-features = false }
 
 [features]
 default = ["rand", "rt"]

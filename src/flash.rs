@@ -17,11 +17,12 @@ impl FlashController {
 
         // TODO: flash vs code + write protection checks
         if !(flash_start <= location && location + 8 < flash_start + flash_len) {
-            return Err(HalError);
+            return Err(HalError::OobFlashAddress);
         }
         if location & 0b111 != 0 {
-            return Err(HalError);
+            return Err(HalError::Unaligned(3));
         }
+
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().program().size().oneword());
@@ -53,15 +54,8 @@ impl FlashController {
         {
             nop();
         }
-        if self
-            .controller
-            .flashctl_statcmd()
-            .read()
-            .cmdpass()
-            .is_statfail()
-        {
-            return Err(HalError); // TODO: determine error type and return
-        }
+
+        self.check_error()?;
 
         // prevent accidental operations (suggested by manual)
         self.controller
@@ -100,7 +94,7 @@ impl FlashController {
 
         // address must be aligned to 1kb
         if location & 0x3ff != 0 {
-            return Err(HalError);
+            return Err(HalError::Unaligned(10));
         }
         self.controller
             .flashctl_cmdtype()
@@ -122,15 +116,8 @@ impl FlashController {
         {
             nop();
         }
-        if self
-            .controller
-            .flashctl_statcmd()
-            .read()
-            .cmdpass()
-            .is_statfail()
-        {
-            return Err(HalError); // TODO: determine error type and return
-        }
+
+        self.check_error()?;
 
         // prevent accidental operations (suggested by manual)
         self.controller
@@ -143,6 +130,20 @@ impl FlashController {
         // cache and prefetch logic. Before reading locations which were programmed, it is recommended to first flush
         // the cache in the CPU subsystem.
 
+        Ok(())
+    }
+
+    fn check_error(&self) -> Result<(), HalError> {
+        let stat = self.controller.flashctl_statcmd().read();
+        if stat.cmdpass().is_statfail() {
+            if stat.faililladdr().bit_is_set() {
+                return Err(HalError::IllegalFlashAddress);
+            } else if stat.failweprot().bit_is_set() {
+                return Err(HalError::WriteProtectedFlashAddress);
+            }
+
+            return Err(HalError::Unknown);
+        }
         Ok(())
     }
 }
