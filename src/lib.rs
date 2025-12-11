@@ -1,6 +1,9 @@
 #![no_std]
+pub mod cursor;
+pub mod flash;
 pub mod iomux;
 pub mod led;
+pub mod mpu;
 pub mod trng;
 pub mod uart;
 

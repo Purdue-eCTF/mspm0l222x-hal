@@ -1,11 +1,16 @@
 use mspm0l222x_pac::{Gpioa, Gpiob, Iomux};
+use once_cell::sync::OnceCell;
 
 use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
-pub struct Led<'a> {
-    gpioa: &'a Gpioa,
-    gpiob: &'a Gpiob,
+pub struct Led {
+    gpioa: Gpioa,
+    gpiob: Gpiob,
 }
+
+// TODO: is this fine?
+unsafe impl Send for Led {}
+unsafe impl Sync for Led {}
 
 pub enum LedColor {
     Red,
@@ -16,6 +21,12 @@ pub enum LedColor {
 pub enum GpioBank<'a> {
     GpioA(&'a Gpioa),
     GpioB(&'a Gpiob),
+}
+
+static LED: OnceCell<Led> = OnceCell::new();
+
+pub fn led() -> &'static Led {
+    &LED.get().expect("LEDs not yet initialized")
 }
 
 pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
@@ -66,8 +77,12 @@ pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
     }
 }
 
-impl<'a> Led<'a> {
-    pub fn new(iomux: &Iomux, gpioa: &'a Gpioa, gpiob: &'a Gpiob) -> Self {
+impl Led {
+    pub fn init(iomux: &Iomux, gpioa: Gpioa, gpiob: Gpiob) {
+        let _ = LED.get_or_init(|| Led::new(iomux, gpioa, gpiob));
+    }
+
+    pub fn new(iomux: &Iomux, gpioa: Gpioa, gpiob: Gpiob) -> Self {
         // #define GPIO_RSTCTL_KEY_UNLOCK_W ((uint32_t)0xB1000000U)
         // #define GPIO_PWREN_KEY_UNLOCK_W ((uint32_t)0x26000000U)
 
