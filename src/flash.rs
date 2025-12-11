@@ -1,9 +1,25 @@
-use crate::HalError;
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
+use thiserror::Error;
+
+use crate::HalError;
 
 pub struct FlashController {
     controller: Flashctl,
+}
+
+#[derive(Error, Debug)]
+pub enum FlashError {
+    #[error("Unknown error")]
+    Unknown,
+    #[error("Unaligned address (should be {0}-bit aligned)")]
+    Unaligned(u8),
+    #[error("Out-of-bounds flash address")]
+    OobFlashAddress,
+    #[error("Illegal flash address")]
+    IllegalFlashAddress,
+    #[error("Target flash address is write-protected")]
+    WriteProtectedFlashAddress,
 }
 
 impl FlashController {
@@ -17,10 +33,10 @@ impl FlashController {
 
         // TODO: flash vs code + write protection checks
         if !(flash_start <= location && location + 8 < flash_start + flash_len) {
-            return Err(HalError::OobFlashAddress);
+            return Err(FlashError::OobFlashAddress.into());
         }
         if location & 0b111 != 0 {
-            return Err(HalError::Unaligned(3));
+            return Err(FlashError::Unaligned(3).into());
         }
 
         self.controller
@@ -94,7 +110,7 @@ impl FlashController {
 
         // address must be aligned to 1kb
         if location & 0x3ff != 0 {
-            return Err(HalError::Unaligned(10));
+            return Err(FlashError::Unaligned(10).into());
         }
         self.controller
             .flashctl_cmdtype()
@@ -137,12 +153,12 @@ impl FlashController {
         let stat = self.controller.flashctl_statcmd().read();
         if stat.cmdpass().is_statfail() {
             if stat.faililladdr().bit_is_set() {
-                return Err(HalError::IllegalFlashAddress);
+                return Err(FlashError::IllegalFlashAddress.into());
             } else if stat.failweprot().bit_is_set() {
-                return Err(HalError::WriteProtectedFlashAddress);
+                return Err(FlashError::WriteProtectedFlashAddress.into());
             }
 
-            return Err(HalError::Unknown);
+            return Err(FlashError::Unknown.into());
         }
         Ok(())
     }

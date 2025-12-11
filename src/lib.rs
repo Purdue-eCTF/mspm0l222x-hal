@@ -28,12 +28,10 @@ pub use trng::Trng;
 pub enum HalError {
     #[error("Unknown error")]
     Unknown,
-    #[error("Unaligned address (should be {0}-bit aligned)")]
-    Unaligned(u8),
-    #[error("Out-of-bounds flash address")]
-    OobFlashAddress,
-    #[error("Illegal flash address")]
-    IllegalFlashAddress,
-    #[error("Target flash address is write-protected")]
-    WriteProtectedFlashAddress,
+    #[error("Flash error: {0}")]
+    FlashError(#[from] flash::FlashError),
+    #[error("Uart error: {0}")]
+    UartError(#[from] uart::UartError),
+    #[error("MPU error error: {0}")]
+    MpuError(#[from] mpu::MpuError),
 }
