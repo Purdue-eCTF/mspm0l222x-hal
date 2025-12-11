@@ -4,6 +4,7 @@ pub mod iomux;
 pub mod led;
 pub mod mpu;
 pub mod uart;
+pub mod flash;
 
 // clock speeds of base clocks
 pub const SYSOSC_FREQUENCY: u32 = 32_000_000;
