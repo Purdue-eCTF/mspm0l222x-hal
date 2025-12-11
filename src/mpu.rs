@@ -1,4 +1,4 @@
-struct Mpu;
+pub struct Mpu;
 
 impl Mpu {
     /// Set the SRAM RW/RX boundary. Addresses below the input will be read/write,
