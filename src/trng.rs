@@ -1,26 +1,34 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Trng as TrngPeriph;
+use once_cell::sync::OnceCell;
 
 use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
-static TRNG_SETUP: AtomicBool = AtomicBool::new(false);
+static TRNG: OnceCell<Trng> = OnceCell::new();
 
-pub struct Trng<'a> {
-    trng: &'a TrngPeriph,
+pub fn trng() -> &'static Trng {
+    &TRNG.get().expect("LEDs not yet initialized")
 }
 
-impl<'a> Trng<'a> {
-    // creates a new TRNG instance and performs one-time hardware init.
-    pub fn new(trng: &'a TrngPeriph) -> Self {
-        let this = Self { trng };
+pub struct Trng {
+    trng: TrngPeriph,
+}
 
-        if !TRNG_SETUP.load(Ordering::SeqCst) {
-            this.init_basic();
-            TRNG_SETUP.store(true, Ordering::Relaxed);
-        }
+unsafe impl Send for Trng {}
+unsafe impl Sync for Trng {}
+
+impl Trng {
+    // creates a new TRNG instance and performs one-time hardware init.
+    fn new(trng: TrngPeriph) -> Self {
+        let this = Self { trng };
+        this.init_basic();
 
         this
+    }
+
+    pub fn init(trng: TrngPeriph) {
+        let _ = TRNG.get_or_init(|| Trng::new(trng));
     }
 
     // minimal TRNG initialization (power, clock divider, CTL).
