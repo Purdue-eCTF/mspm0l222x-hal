@@ -1,8 +1,8 @@
 #![no_std]
 pub mod iomux;
 pub mod led;
-pub mod uart;
 pub mod trng;
+pub mod uart;
 
 // clock speeds of base clocks
 pub const SYSOSC_FREQUENCY: u32 = 32_000_000;

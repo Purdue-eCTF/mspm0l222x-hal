@@ -1,4 +1,5 @@
 use core::sync::atomic::{AtomicBool, Ordering};
+use cortex_m::asm::nop;
 use mspm0l222x_pac::Trng as TrngPeriph;
 
 use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
@@ -53,27 +54,30 @@ impl<'a> Trng<'a> {
             .trng_pwren()
             .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
 
-        for _ in core::hint::black_box(0..32) {}
+        // wait for peripheral to initialize
+        for _ in core::hint::black_box(0..32) {
+            nop();
+        }
     }
 
     fn configure_clkdivide(&self) {
         self.trng
             .trng_clkdivide()
-
-            .write(|w| unsafe { w.ratio().bits(0x3) }); 
+            .write(|w| unsafe { w.ratio().bits(0x3) });
     }
 
     // TRNG in NORM_FUNC mode
     fn configure_ctl_norm_func(&self) {
         self.trng.trng_ctl().write(|w| unsafe {
-            w.cmd().bits(0x3)        // NORM_FUNC
-             .decim_rate().bits(0x3) // decimate by 4
+            w.cmd()
+                .bits(0x3) // NORM_FUNC
+                .decim_rate()
+                .bits(0x3) // decimate by 4
         });
     }
 
     // helper to block until the TRNG state machine completes the command
     fn wait_for_cmd_done(&self) {
-
         while self.trng.trng_ris().read().irq_cmd_done().bit_is_clear() {}
         self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit());
     }
@@ -81,8 +85,16 @@ impl<'a> Trng<'a> {
     // returns the raw 32 bit TRNG output word
     pub fn word(&self) -> u32 {
         // poll IRQ_CAPTURED_RDY and wait for generation completion
-        while self.trng.trng_ris().read().irq_captured_rdy().bit_is_clear() {}
-        
+        while self
+            .trng
+            .trng_ris()
+            .read()
+            .irq_captured_rdy()
+            .bit_is_clear()
+        {
+            nop();
+        }
+
         // reading DATA_CAPTURE automatically clears the IRQ_CAPTURED_RDY flag
         self.trng.trng_data_capture().read().bits()
     }
