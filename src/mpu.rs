@@ -9,16 +9,16 @@ impl Mpu {
     /// available, wherein the SRAM can be partitioned into two regions:
     /// - Region 1: Read-Write (RW)
     /// - Region 2: Read-Execute (RX)
+    ///
     /// This is set up by configuring the SYSCTL.SOCLOCK.SRAMBOUNDARY register with an address A such that:
     /// - Addresses >= A will be permitted for read-execute and not for writes
     /// - Addresses < A will be permitted for read-write and not for execution (instruction fetch)
     pub fn sram_rw_boundary(sysctl: &mspm0l222x_pac::Sysctl, addr: u16) {
-        if addr == 0 {
-            panic!("attempted to set SRAM RW region to length of 0");
-        }
-        if addr >= 1 << 15 {
-            panic!("attempted to set SRAM boundary past end of SRAM");
-        }
+        assert!(addr != 0, "attempted to set SRAM RW region to length of 0");
+        assert!(
+            addr < 1 << 15,
+            "attempted to set SRAM boundary past end of SRAM"
+        );
 
         sysctl
             .sysctl_sramboundary()

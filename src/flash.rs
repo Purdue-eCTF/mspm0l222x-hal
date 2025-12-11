@@ -1,3 +1,4 @@
+use crate::HalError;
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
 
@@ -10,16 +11,16 @@ impl FlashController {
         Self { controller }
     }
 
-    pub fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), ()> {
+    pub fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
 
         // TODO: flash vs code + write protection checks
         if !(flash_start <= location && location + 8 < flash_start + flash_len) {
-            return Err(());
+            return Err(HalError);
         }
         if location & 0b111 != 0 {
-            return Err(());
+            return Err(HalError);
         }
         self.controller
             .flashctl_cmdtype()
@@ -59,7 +60,7 @@ impl FlashController {
             .cmdpass()
             .is_statfail()
         {
-            return Err(()); // TODO: determine error type and return
+            return Err(HalError); // TODO: determine error type and return
         }
 
         // prevent accidental operations (suggested by manual)
@@ -75,7 +76,7 @@ impl FlashController {
         Ok(())
     }
 
-    pub fn write_data(&self, location: u32, data: &[u8]) -> Result<(), ()> {
+    pub fn write_data(&self, location: u32, data: &[u8]) -> Result<(), HalError> {
         // TODO: should this only accept exact-sized chunks?
         let (chunks, rem): (&[[u8; 8]], &[u8]) = data.as_chunks();
 
@@ -94,12 +95,12 @@ impl FlashController {
     }
 
     /// Erase a 1kb sector of flash
-    pub fn erase(&self, location: u32) -> Result<(), ()> {
+    pub fn erase(&self, location: u32) -> Result<(), HalError> {
         // TODO: location checks
 
         // address must be aligned to 1kb
         if location & 0x3ff != 0 {
-            return Err(());
+            return Err(HalError);
         }
         self.controller
             .flashctl_cmdtype()
@@ -128,7 +129,7 @@ impl FlashController {
             .cmdpass()
             .is_statfail()
         {
-            return Err(()); // TODO: determine error type and return
+            return Err(HalError); // TODO: determine error type and return
         }
 
         // prevent accidental operations (suggested by manual)

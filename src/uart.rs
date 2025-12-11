@@ -13,12 +13,12 @@ const RX_IOMUX: usize = 26 - 1;
 static UART: OnceCell<Uart> = OnceCell::new();
 
 pub fn uart() -> &'static Uart {
-    &UART.get().expect("uart not yet initialized")
+    UART.get().expect("uart not yet initialized")
 }
 
 // Taken from ti/driverlib/dl_uart.c
 const fn divisor(freq: u32) -> u32 {
-    ((crate::SYSOSC_FREQUENCY * 8) / freq + 1) / 2
+    ((crate::SYSOSC_FREQUENCY * 8) / freq).div_ceil(2)
 }
 
 use mspm0l222x_pac::uart0::uart0_ctl0::{Ctsen, Fen, Hse, Mode, Rtsen, Rxe, Txe};
@@ -68,7 +68,7 @@ impl Uart {
         let _ = UART.get_or_init(|| Uart::new(iomux, uart));
     }
 
-    fn new_with_config(opts: UartOptions, iomux: &Iomux, uart: Uart0) -> Self {
+    fn new_with_config(opts: &UartOptions, iomux: &Iomux, uart: Uart0) -> Self {
         // Disable UART before configuration
         uart.uart0_gprcm(0).uart0_rstctl().write(|w| {
             unsafe { w.bits(RSTCTL_WRITE_KEY) }
@@ -143,7 +143,7 @@ impl Uart {
     }
 
     fn new(iomux: &Iomux, uart: Uart0) -> Self {
-        Uart::new_with_config(UartOptions::default(), iomux, uart)
+        Uart::new_with_config(&UartOptions::default(), iomux, uart)
     }
 
     pub fn write_bytes(&self, bytes: &[u8]) {
@@ -181,10 +181,6 @@ impl Uart {
     /// Returns whether either tx or rx is busy
     pub fn busy(&self) -> bool {
         self.regs.uart0_stat().read().busy().bit_is_set()
-    }
-
-    pub fn set_tx(&self, state: bool) {
-        self.regs.uart0_ctl0().modify(|_, w| w.txd_out().bit(state));
     }
 }
 

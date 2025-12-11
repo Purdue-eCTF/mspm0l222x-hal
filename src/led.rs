@@ -26,7 +26,7 @@ pub enum GpioBank<'a> {
 static LED: OnceCell<Led> = OnceCell::new();
 
 pub fn led() -> &'static Led {
-    &LED.get().expect("LEDs not yet initialized")
+    LED.get().expect("LEDs not yet initialized")
 }
 
 pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
@@ -105,8 +105,7 @@ impl Led {
         enable_gpio(&mut GpioBank::GpioB(&gpiob), 10);
         enable_gpio(&mut GpioBank::GpioB(&gpiob), 9);
 
-        let res = Self { gpioa, gpiob };
-        res
+        Self { gpioa, gpiob }
     }
     pub fn set(&self, color: LedColor) {
         match color {

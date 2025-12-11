@@ -1,4 +1,3 @@
-use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Trng as TrngPeriph;
 use once_cell::sync::OnceCell;
@@ -8,7 +7,7 @@ use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 static TRNG: OnceCell<Trng> = OnceCell::new();
 
 pub fn trng() -> &'static Trng {
-    &TRNG.get().expect("LEDs not yet initialized")
+    TRNG.get().expect("LEDs not yet initialized")
 }
 
 pub struct Trng {

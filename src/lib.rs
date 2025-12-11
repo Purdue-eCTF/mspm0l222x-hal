@@ -18,3 +18,5 @@ pub const RSTCTL_WRITE_KEY: u32 = 0xB1000000;
 
 pub use mspm0l222x_pac::{self, Peripherals};
 pub use trng::Trng;
+
+pub struct HalError;
