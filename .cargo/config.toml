@@ -4,7 +4,6 @@ target = "thumbv6m-none-eabi"
 [unstable]
 profile-rustflags = true
 
-
 [target.thumbv6m-none-eabi]
 rustflags = [
     "-C",
@@ -13,7 +12,4 @@ rustflags = [
     "link-arg=-nostartfiles",
     "-C",
     "link-arg=-Tlink.x",
-    # "-C",
-    # "link-arg=--verbose"
 ]
-runner = ["sh", "run.sh"]
