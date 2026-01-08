@@ -86,9 +86,14 @@ impl FlashController {
         Ok(())
     }
 
-    pub fn write_data(&self, location: u32, data: &[u8]) -> Result<(), HalError> {
+    pub fn write_data<T>(&self, location: u32, data: &T) -> Result<(), HalError>
+    where
+        T: bytemuck::Pod,
+    {
+        // TODO: add reset protection?
         // TODO: should this only accept exact-sized chunks?
-        let (chunks, rem): (&[[u8; 8]], &[u8]) = data.as_chunks();
+        let data_bytes = bytemuck::bytes_of(data);
+        let (chunks, rem): (&[[u8; 8]], &[u8]) = data_bytes.as_chunks();
 
         for (i, chunk) in chunks.iter().enumerate() {
             self.write_word(location + 8 * (i as u32), *chunk)?;
@@ -100,6 +105,8 @@ impl FlashController {
             last[..rem.len()].copy_from_slice(rem);
             self.write_word(location + (chunks.len() as u32) * 8, last)?;
         }
+
+        // TODO: verify that flash write succeeded
 
         Ok(())
     }
@@ -162,4 +169,6 @@ impl FlashController {
         }
         Ok(())
     }
+
+    // TODO: add verify command
 }
