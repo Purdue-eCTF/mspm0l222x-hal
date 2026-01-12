@@ -1,10 +1,10 @@
 use core::fmt::{self, Write};
 use cortex_m::asm::nop;
-use mspm0l222x_pac::Iomux;
 use once_cell::sync::OnceCell;
 use thiserror::Error;
 
 use crate::cursor::Cursor;
+use crate::iomux::Iomux;
 use crate::{HalError, PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 const UART_FREQUENCY: u32 = 9600;
@@ -59,12 +59,8 @@ macro_rules! uart_impl {
                 }
 
                 // set up IOMUX to output
-                iomux
-                    .iomux_pincm($tx_iomux - 1)
-                    .write(|w| unsafe { w.pf().bits($pf).pc().connected() });
-                iomux
-                    .iomux_pincm($rx_iomux - 1)
-                    .write(|w| unsafe { w.pf().bits($pf).pc().connected() });
+                iomux.connect_pin($tx_iomux, $pf);
+                iomux.connect_pin($rx_iomux, $pf);
 
                 // disable UART
                 uart.${concat(uart, $n, _ctl0)}().write(|w| w.enable().clear_bit());
