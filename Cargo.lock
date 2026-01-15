@@ -87,6 +87,7 @@ dependencies = [
 [[package]]
 name = "mspm0l222x-pac"
 version = "0.1.0"
+source = "git+https://github.com/Purdue-eCTF/mspm0l222x-pac.git#48b6ddbb2c12782424d4bbb71e4833a7a0687857"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
