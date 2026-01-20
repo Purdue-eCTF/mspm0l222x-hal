@@ -7,7 +7,7 @@ use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 static TRNG: OnceCell<Trng> = OnceCell::new();
 
 pub fn trng() -> &'static Trng {
-    TRNG.get().expect("LEDs not yet initialized")
+    TRNG.get().expect("TRNG not yet initialized")
 }
 
 pub struct Trng {
@@ -21,7 +21,7 @@ impl Trng {
     // creates a new TRNG instance and performs one-time hardware init.
     fn new(trng: TrngPeriph) -> Self {
         let this = Self { trng };
-        this.init_basic();
+        this.init_trng();
 
         this
     }
@@ -30,18 +30,44 @@ impl Trng {
         let _ = TRNG.get_or_init(|| Trng::new(trng));
     }
 
-    // minimal TRNG initialization (power, clock divider, CTL).
-    fn init_basic(&self) {
+    // TRNG initialization
+    fn init_trng(&self) {
         self.power_on();
         self.configure_clkdivide();
-        self.configure_ctl_norm_func();
 
+        self.run_startup_tests();
+
+        // enter NORM_FUNC to start data generation
+        self.configure_ctl_norm_func();
         // wait for the command to be accepted by the state machine
         self.wait_for_cmd_done();
 
-        // discard the first sample
+        // enable hardware health monitoring interrupt mask
+        self.trng.trng_imask().write(|w| w.irq_health_fail().set_bit());
+
+        // discard the first sample after startup tests
         let _ = self.word();
+}
+
+    fn run_startup_tests(&self) {
+    // execute digital startup self-test
+    self.trng.trng_ctl().modify(|_, w| unsafe { w.cmd().bits(0x1) });
+    self.wait_for_cmd_done();
+    
+    // verify all 8 digital tests passed
+    if self.trng.trng_test_results().read().dig_test().bits() != 0xFF {
+        panic!("TRNG Digital Test Fail");
     }
+
+    // execute analog startup self-test
+    self.trng.trng_ctl().modify(|_, w| unsafe { w.cmd().bits(0x2) });
+    self.wait_for_cmd_done();
+    
+    // verify analog entropy source is functional
+    if self.trng.trng_test_results().read().ana_test().bit_is_clear() {
+        panic!("TRNG Analog Test Fail");
+    }
+}
 
     // power up the TRNG block using the GPRCM reset + pwren sequence.
     fn power_on(&self) {
@@ -91,18 +117,17 @@ impl Trng {
 
     // returns the raw 32 bit TRNG output word
     pub fn word(&self) -> u32 {
-        // poll IRQ_CAPTURED_RDY and wait for generation completion
-        while self
-            .trng
-            .trng_ris()
-            .read()
-            .irq_captured_rdy()
-            .bit_is_clear()
-        {
+        // verify FSM is not in error state due to runtime health fail
+        if self.trng.trng_stat().read().fsm_state().bits() == 0xA {
+            panic!("TRNG Health Fail");
+        }
+
+        while self.trng.trng_ris().read().irq_captured_rdy().bit_is_clear() {
             nop();
         }
 
         // reading DATA_CAPTURE automatically clears the IRQ_CAPTURED_RDY flag
         self.trng.trng_data_capture().read().bits()
     }
+    
 }
