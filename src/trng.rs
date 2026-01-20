@@ -43,31 +43,43 @@ impl Trng {
         self.wait_for_cmd_done();
 
         // enable hardware health monitoring interrupt mask
-        self.trng.trng_imask().write(|w| w.irq_health_fail().set_bit());
+        self.trng
+            .trng_imask()
+            .write(|w| w.irq_health_fail().set_bit());
 
         // discard the first sample after startup tests
         let _ = self.word();
-}
+    }
 
     fn run_startup_tests(&self) {
-    // execute digital startup self-test
-    self.trng.trng_ctl().modify(|_, w| unsafe { w.cmd().bits(0x1) });
-    self.wait_for_cmd_done();
-    
-    // verify all 8 digital tests passed
-    if self.trng.trng_test_results().read().dig_test().bits() != 0xFF {
-        panic!("TRNG Digital Test Fail");
-    }
+        // execute digital startup self-test
+        self.trng
+            .trng_ctl()
+            .modify(|_, w| unsafe { w.cmd().bits(0x1) });
+        self.wait_for_cmd_done();
 
-    // execute analog startup self-test
-    self.trng.trng_ctl().modify(|_, w| unsafe { w.cmd().bits(0x2) });
-    self.wait_for_cmd_done();
-    
-    // verify analog entropy source is functional
-    if self.trng.trng_test_results().read().ana_test().bit_is_clear() {
-        panic!("TRNG Analog Test Fail");
+        // verify all 8 digital tests passed
+        if self.trng.trng_test_results().read().dig_test().bits() != 0xFF {
+            panic!("TRNG Digital Test Fail");
+        }
+
+        // execute analog startup self-test
+        self.trng
+            .trng_ctl()
+            .modify(|_, w| unsafe { w.cmd().bits(0x2) });
+        self.wait_for_cmd_done();
+
+        // verify analog entropy source is functional
+        if self
+            .trng
+            .trng_test_results()
+            .read()
+            .ana_test()
+            .bit_is_clear()
+        {
+            panic!("TRNG Analog Test Fail");
+        }
     }
-}
 
     // power up the TRNG block using the GPRCM reset + pwren sequence.
     fn power_on(&self) {
@@ -122,12 +134,17 @@ impl Trng {
             panic!("TRNG Health Fail");
         }
 
-        while self.trng.trng_ris().read().irq_captured_rdy().bit_is_clear() {
+        while self
+            .trng
+            .trng_ris()
+            .read()
+            .irq_captured_rdy()
+            .bit_is_clear()
+        {
             nop();
         }
 
         // reading DATA_CAPTURE automatically clears the IRQ_CAPTURED_RDY flag
         self.trng.trng_data_capture().read().bits()
     }
-    
 }
