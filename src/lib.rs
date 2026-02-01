@@ -8,6 +8,7 @@ pub mod led;
 pub mod mpu;
 pub mod trng;
 pub mod uart;
+pub mod aes;
 
 // clock speeds of base clocks
 pub const SYSOSC_FREQUENCY: u32 = 32_000_000;
