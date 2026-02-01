@@ -4,6 +4,7 @@ use once_cell::sync::OnceCell;
 use crate::iomux::Iomux;
 use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
+/// The leds on this device correspond to the peripheral pins, gpioa and gpiob.
 pub struct Led {
     gpioa: Gpioa,
     gpiob: Gpiob,
@@ -13,12 +14,17 @@ pub struct Led {
 unsafe impl Send for Led {}
 unsafe impl Sync for Led {}
 
+/// The LED can be red, green, or blue.
 pub enum LedColor {
+    /// The red color.
     Red,
+    /// The blue color.
     Blue,
+    /// The green color.
     Green,
 }
 
+/// The leds on this device correspond to the peripheral pins, gpioa and gpiob.
 pub enum GpioBank<'a> {
     GpioA(&'a Gpioa),
     GpioB(&'a Gpiob),
@@ -26,10 +32,13 @@ pub enum GpioBank<'a> {
 
 static LED: OnceCell<Led> = OnceCell::new();
 
+/// Initializes leds, creating an instance of the LED before returning the Led instance.
+/// If the initialization fails, panic with an error message.
 pub fn led() -> &'static Led {
     LED.get().expect("LEDs not yet initialized")
 }
 
+/// Enables and provides power to the corresponding led being used.
 pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
     assert!(pin < 32, "pins >= 32 not implemented");
     match bank {
@@ -79,10 +88,12 @@ pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
 }
 
 impl Led {
+    /// Initiates both leds with the iomux.
     pub fn init(iomux: &Iomux, gpioa: Gpioa, gpiob: Gpiob) {
         let _ = LED.get_or_init(|| Led::new(iomux, gpioa, gpiob));
     }
 
+    /// Enables and configures the iomux with the leds.
     pub fn new(iomux: &Iomux, gpioa: Gpioa, gpiob: Gpiob) -> Self {
         // #define GPIO_RSTCTL_KEY_UNLOCK_W ((uint32_t)0xB1000000U)
         // #define GPIO_PWREN_KEY_UNLOCK_W ((uint32_t)0x26000000U)
@@ -102,6 +113,7 @@ impl Led {
         Self { gpioa, gpiob }
     }
 
+    /// Set the led the either red, green, or blue.
     pub fn set(&self, color: LedColor) {
         match color {
             LedColor::Blue => self.gpioa.gpioa_dout19_16().write(|w| w.dio16().one()),
@@ -110,6 +122,7 @@ impl Led {
         };
     }
 
+    /// Clear the led color from either red, green, or blue.
     pub fn clear(&self, color: LedColor) {
         // from LP-MSPM0L2228 docs:
         // PA16 -> blue
@@ -122,6 +135,8 @@ impl Led {
         };
     }
 
+    /// Sets or clears a color from a led. When the state parameter is true, the provided color will
+    /// be set; when the state parameter is false, the provided color will be cleared from the led.
     pub fn write(&self, color: LedColor, state: bool) {
         if state {
             self.set(color);
@@ -130,6 +145,7 @@ impl Led {
         }
     }
 
+    /// Toggles a provided color on and off.
     pub fn toggle(&self, color: LedColor) {
         match color {
             LedColor::Blue => self.gpioa.gpioa_douttgl31_0().write(|w| w.dio16().toggle()),

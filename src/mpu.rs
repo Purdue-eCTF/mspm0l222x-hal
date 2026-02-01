@@ -1,12 +1,17 @@
 use thiserror::Error;
 
 use crate::HalError;
+/// The MPU ensures that the SRAM region being set is valid.
 pub struct Mpu;
 
+/// The error that is returned if there's been an attempt to set a SRAM 
+/// region to an illegal length or location.
 #[derive(Error, Debug)]
 pub enum MpuError {
+    /// There has been an attempt to set the SRAM RW region to a length of 0.
     #[error("attempted to set SRAM RW region to length of 0")]
     ZeroLength,
+    /// There has been an attempt to set a SRAM boundary past the end of the SRAM region.
     #[error("attempted to set SRAM boundary to {0} (past end of SRAM)")]
     PastBoundary(u32),
 }

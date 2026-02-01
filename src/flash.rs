@@ -4,29 +4,39 @@ use thiserror::Error;
 
 use crate::HalError;
 
+/// The controller for the NVM flash, used to store executable code and data.
 pub struct FlashController {
     controller: Flashctl,
 }
 
+/// The error that is returned during failure of an operation with flash, often to do with the
+/// address used being invalid in some way.
 #[derive(Error, Debug)]
 pub enum FlashError {
+    /// The error is unknown...
     #[error("Unknown error")]
     Unknown,
+    /// The address is incorrectly aligned; returns the correct alignment value.
     #[error("Unaligned address (should be {0}-bit aligned)")]
     Unaligned(u8),
+    /// The flash address is out of bounds.
     #[error("Out-of-bounds flash address")]
     OobFlashAddress,
+    /// The flash address is illegal.
     #[error("Illegal flash address")]
     IllegalFlashAddress,
+    /// The flash address is write-protected.
     #[error("Target flash address is write-protected")]
     WriteProtectedFlashAddress,
 }
 
 impl FlashController {
+    /// Creates a new flash instance.
     pub fn new(controller: Flashctl) -> Self {
         Self { controller }
     }
 
+    /// Writes a given word to the flash at a given location value and returns the Result status.
     pub fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
@@ -61,6 +71,7 @@ impl FlashController {
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
 
+        // delay during writing
         while !self
             .controller
             .flashctl_statcmd()
@@ -73,7 +84,7 @@ impl FlashController {
 
         self.check_error()?;
 
-        // prevent accidental operations (suggested by manual)
+        // prevent accidental operations (suggested by manual 6.3.2)
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().noop());
@@ -86,6 +97,7 @@ impl FlashController {
         Ok(())
     }
 
+    /// Writes given data to the flash at a given location value and returns the Result status.
     pub fn write_data<T>(&self, location: u32, data: &T) -> Result<(), HalError>
     where
         T: bytemuck::Pod,
@@ -130,6 +142,7 @@ impl FlashController {
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
 
+        // delay during writing
         while !self
             .controller
             .flashctl_statcmd()
@@ -156,6 +169,8 @@ impl FlashController {
         Ok(())
     }
 
+    /// Read flash command status register to check if there has been a error and returns the error
+    /// if necessary.
     fn check_error(&self) -> Result<(), HalError> {
         let stat = self.controller.flashctl_statcmd().read();
         if stat.cmdpass().is_statfail() {

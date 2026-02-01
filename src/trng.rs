@@ -6,10 +6,12 @@ use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 static TRNG: OnceCell<Trng> = OnceCell::new();
 
+/// Initializes the trng unit, creating and returning an instance of Trng.
 pub fn trng() -> &'static Trng {
     TRNG.get().expect("TRNG not yet initialized")
 }
 
+/// The Trng unit is an entropy source for true random number generation.
 pub struct Trng {
     trng: TrngPeriph,
 }
@@ -18,7 +20,7 @@ unsafe impl Send for Trng {}
 unsafe impl Sync for Trng {}
 
 impl Trng {
-    // creates a new TRNG instance and performs one-time hardware init.
+    /// Creates a new TRNG instance and performs one-time hardware init.
     fn new(trng: TrngPeriph) -> Self {
         let this = Self { trng };
         this.init_trng();
@@ -26,11 +28,12 @@ impl Trng {
         this
     }
 
+    /// Initiate the hardware trng unit if it isn't already initiated before retrieving the trng unit.
     pub fn init(trng: TrngPeriph) {
         let _ = TRNG.get_or_init(|| Trng::new(trng));
     }
 
-    // TRNG initialization
+    /// TRNG initialization (power on and configuration).
     fn init_trng(&self) {
         self.power_on();
         self.configure_clkdivide();
@@ -51,6 +54,7 @@ impl Trng {
         let _ = self.word();
     }
 
+    /// Tests to perform on the TRNG upon startup. Panic on failure.
     fn run_startup_tests(&self) {
         // execute digital startup self-test
         self.trng
@@ -81,7 +85,7 @@ impl Trng {
         }
     }
 
-    // power up the TRNG block using the GPRCM reset + pwren sequence.
+    /// Power up the TRNG block using the GPRCM reset + pwren sequence.
     fn power_on(&self) {
         let gprcm = self.trng.trng_gprcm(0);
 
@@ -105,13 +109,14 @@ impl Trng {
         }
     }
 
+    /// Configures the trng's clock frequency with clkdivide. (see Reference Manual section 13.2.2)
     fn configure_clkdivide(&self) {
         self.trng
             .trng_clkdivide()
             .write(|w| unsafe { w.ratio().bits(0x3) });
     }
 
-    // TRNG in NORM_FUNC mode
+    /// Configures the TRNG to be in NORM_FUNC mode.
     fn configure_ctl_norm_func(&self) {
         self.trng.trng_ctl().write(|w| unsafe {
             w.cmd()
@@ -121,13 +126,13 @@ impl Trng {
         });
     }
 
-    // helper to block until the TRNG state machine completes the command
+    /// Helper function to block until the TRNG state machine completes the command.
     fn wait_for_cmd_done(&self) {
         while self.trng.trng_ris().read().irq_cmd_done().bit_is_clear() {}
         self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit());
     }
 
-    // returns the raw 32 bit TRNG output word
+    /// Returns the raw 32 bit TRNG output word. Panics if FSM is in error due to runtime health failure.
     pub fn word(&self) -> u32 {
         // verify FSM is not in error state due to runtime health fail
         if self.trng.trng_stat().read().fsm_state().bits() == 0xA {
