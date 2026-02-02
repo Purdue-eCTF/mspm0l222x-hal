@@ -15,6 +15,7 @@ pub mod mpu;
 pub mod trng;
 /// Facilitates serial communication by TX and RX pins.
 pub mod uart;
+pub mod aes;
 
 // clock speeds of base clocks
 /// The system oscillator frequency is 32MHz. (Reference Manual 2.3.2.1)
