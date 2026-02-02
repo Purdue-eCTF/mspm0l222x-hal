@@ -35,10 +35,19 @@ impl Trng {
         self.power_on();
         self.configure_clkdivide();
 
+        // must be in NORM_FUNC before issuing commands
+        self.trng.trng_ctl().write(|w| unsafe { w.cmd().bits(0x3) });
+        self.wait_for_cmd_done();
+
+        // run tests with delays to ensure stability
         self.run_startup_tests();
+
+        // clear interrupt status that may have triggered during tests
+        self.trng.trng_iclr().write(|w| w.irq_captured_rdy().set_bit());
 
         // enter NORM_FUNC to start data generation
         self.configure_ctl_norm_func();
+        
         // wait for the command to be accepted by the state machine
         self.wait_for_cmd_done();
 
@@ -53,9 +62,13 @@ impl Trng {
 
     fn run_startup_tests(&self) {
         // execute digital startup self-test
+        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
+
+        // Execute digital startup self-test
         self.trng
             .trng_ctl()
-            .modify(|_, w| unsafe { w.cmd().bits(0x1) });
+            .write(|w| unsafe { w.cmd().bits(0x1) });
+
         self.wait_for_cmd_done();
 
         // verify all 8 digital tests passed
@@ -64,9 +77,12 @@ impl Trng {
         }
 
         // execute analog startup self-test
+        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
+
         self.trng
             .trng_ctl()
-            .modify(|_, w| unsafe { w.cmd().bits(0x2) });
+            .write(|w| unsafe { w.cmd().bits(0x2) });
+
         self.wait_for_cmd_done();
 
         // verify analog entropy source is functional
@@ -79,19 +95,24 @@ impl Trng {
         {
             panic!("TRNG Analog Test Fail");
         }
+        // trng auto-returns to NORM_FUNC after analog test
     }
 
     // power up the TRNG block using the GPRCM reset + pwren sequence.
     fn power_on(&self) {
         let gprcm = self.trng.trng_gprcm(0);
 
-        // reset the module
+        // assert reset
         gprcm.trng_rstctl().write(|w| {
             unsafe { w.bits(RSTCTL_WRITE_KEY) }
-                .resetassert()
-                .assert()
-                .resetstkyclr()
-                .clr()
+                .resetassert().assert()
+        });
+
+        // de-assert reset
+        gprcm.trng_rstctl().write(|w| {
+            unsafe { w.bits(RSTCTL_WRITE_KEY) }
+                .resetassert().clear_bit()
+                .resetstkyclr().clr()
         });
 
         // enable TRNG power
@@ -100,9 +121,6 @@ impl Trng {
             .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
 
         // wait for peripheral to initialize
-        for _ in core::hint::black_box(0..32) {
-            nop();
-        }
     }
 
     fn configure_clkdivide(&self) {
@@ -113,6 +131,8 @@ impl Trng {
 
     // TRNG in NORM_FUNC mode
     fn configure_ctl_norm_func(&self) {
+        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
+
         self.trng.trng_ctl().write(|w| unsafe {
             w.cmd()
                 .bits(0x3) // NORM_FUNC
@@ -123,8 +143,19 @@ impl Trng {
 
     // helper to block until the TRNG state machine completes the command
     fn wait_for_cmd_done(&self) {
-        while self.trng.trng_ris().read().irq_cmd_done().bit_is_clear() {}
-        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit());
+        loop {
+            let ris = self.trng.trng_ris().read();
+
+            if ris.irq_cmd_done().bit_is_set() {
+                self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit());
+                break;
+            }
+
+            if ris.irq_cmd_fail().bit_is_set() {
+                self.trng.trng_iclr().write(|w| w.irq_cmd_fail().set_bit());
+                panic!("TRNG Command Rejected");
+            }
+        }
     }
 
     // returns the raw 32 bit TRNG output word
