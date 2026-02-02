@@ -138,6 +138,12 @@ macro_rules! uart_impl {
                 Ok(())
             }
 
+            pub fn read_byte(&self) -> Result<u8, HalError> {
+                let mut value = 0u8;
+                self.read_bytes(bytemuck::bytes_of_mut(&mut value))?;
+                Ok(value)
+            }
+
             /// Returns whether either tx or rx is busy
             pub fn busy(&self) -> bool {
                 self.regs.${concat(uart, $n, _stat)}().read().busy().bit_is_set()
