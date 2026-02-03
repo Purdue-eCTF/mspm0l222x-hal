@@ -91,6 +91,7 @@ impl Led {
         // PINCM42 -> PA16
         // PINCM30 -> PB9
         // PINCM31 -> PB10
+
         iomux.connect_pin(42, 1);
         iomux.connect_pin(30, 1);
         iomux.connect_pin(31, 1);

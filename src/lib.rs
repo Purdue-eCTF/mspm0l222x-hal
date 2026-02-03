@@ -1,4 +1,6 @@
 #![no_std]
+#![feature(macro_metavar_expr_concat)]
+
 use thiserror::Error;
 
 pub mod cursor;
