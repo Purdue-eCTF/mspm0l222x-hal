@@ -1,5 +1,8 @@
 #![no_std]
+#![feature(macro_metavar_expr_concat)]
+
 use thiserror::Error;
+// descriptions from TI lol
 
 /// TODO Cursor for reading/writing to buffers.
 pub mod cursor;
@@ -15,6 +18,8 @@ pub mod mpu;
 pub mod trng;
 /// Facilitates serial communication by TX and RX pins.
 pub mod uart;
+/// The AESADV accelerates encryption and decryption in hardware with (FIPS PUB 197) advanced
+/// encryption standard (AES).
 pub mod aes;
 
 // clock speeds of base clocks

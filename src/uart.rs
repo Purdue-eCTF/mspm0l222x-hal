@@ -1,21 +1,18 @@
 use core::fmt::{self, Write};
 use cortex_m::asm::nop;
-use mspm0l222x_pac::{Iomux, Uart0};
 use once_cell::sync::OnceCell;
 use thiserror::Error;
 
 use crate::cursor::Cursor;
+use crate::iomux::Iomux;
 use crate::{HalError, PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 const UART_FREQUENCY: u32 = 9600; /* (baud) rate data is transferred */
-const UART_FUNCTION: u8 = 2;
-const TX_IOMUX: usize = 25 - 1;
-const RX_IOMUX: usize = 26 - 1;
 
-static UART: OnceCell<Uart> = OnceCell::new();
+static UART: OnceCell<Uart0> = OnceCell::new();
 
-/// Initializes uart, creating and returning an instance of Uart.
-/// If the initialization fails, panic with an error message.
+pub type Uart = Uart0;
+/// Initializes uart, creating and returning an instance of Uart; panic if the initialization fails.
 pub fn uart() -> &'static Uart {
     UART.get().expect("uart not yet initialized")
 }
@@ -25,10 +22,7 @@ const fn divisor(freq: u32) -> u32 {
     ((crate::SYSOSC_FREQUENCY * 8) / freq).div_ceil(2)
 }
 
-/// Register for the UART, which is used for serial communication.
-pub struct Uart {
-    regs: Uart0,
-}
+/// TODO Register for the UART, which is used for serial communication.
 
 /// The error that is returned in the failure of a read or write operation.
 #[derive(Error, Debug)]
@@ -42,129 +36,151 @@ pub enum UartError {
     WriteError,
 }
 
-// TODO: is this fine?
-unsafe impl Send for Uart {}
-unsafe impl Sync for Uart {}
-
-impl Uart {
-    /// Initate the hardware UART if it isn't already initiated before retrieving the uart.
-    pub fn init(iomux: &Iomux, uart: Uart0) {
-        let _ = UART.get_or_init(|| Uart::new(iomux, uart, UART_FREQUENCY));
-    }
-
-    /// Configure the new UART. (see Reference Manual section 21.2.6)
-    fn new(iomux: &Iomux, uart: Uart0, freq: u32) -> Self {
-        // Disable UART before configuration
-        uart.uart0_gprcm(0).uart0_rstctl().write(|w| {
-            unsafe { w.bits(RSTCTL_WRITE_KEY) }
-                .resetassert()
-                .assert()
-                .resetstkyclr()
-                .clr()
-        });
-
-        // Enable power for uart with PWREN register
-        uart.uart0_gprcm(0)
-            .uart0_pwren()
-            .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
-
-        // delay while UART initializes
-        for _ in core::hint::black_box(0..32) {
-            nop();
+macro_rules! uart_impl {
+    ($n:literal, $tx_iomux:literal, $rx_iomux:literal, $pf:literal) => {
+        pub struct ${concat(Uart, $n)} {
+            regs: mspm0l222x_pac::${concat(Uart, $n)},
         }
 
-        // set up IOMUX to output (TX pin)
-        iomux
-            .iomux_pincm(TX_IOMUX)
-            .write(|w| unsafe { w.pf().bits(UART_FUNCTION).pc().connected() });
-        // set up IOMUX to input (RX pin)
-        iomux
-            .iomux_pincm(RX_IOMUX)
-            .write(|w| unsafe { w.pf().bits(UART_FUNCTION).pc().connected() });
+        // TODO: is this fine?
+        unsafe impl Send for ${concat(Uart, $n)} {}
+        unsafe impl Sync for ${concat(Uart, $n)} {}
 
-        // disable UART
-        uart.uart0_ctl0().write(|w| w.enable().clear_bit());
+        impl ${concat(Uart, $n)} {
 
-        // Select clock source (BUSCLK) with (clksel) and divisor with (clkdiv)
-        uart.uart0_clksel().write(|w| w.busclk_sel().enable());
-        uart.uart0_clkdiv().write(|w| w.ratio().div_by_1());
+            /// Configure the new UART. (see Reference Manual section 21.2.6)
+            pub fn new(iomux: &Iomux, uart: mspm0l222x_pac::${concat(Uart, $n)}, freq: u32) -> Self {
+                // Disable UART before configuration
+                uart.${concat(uart, $n, _gprcm)}(0).${concat(uart, $n, _rstctl)}().write(|w| {
+                    unsafe { w.bits(RSTCTL_WRITE_KEY) }
+                        .resetassert()
+                        .assert()
+                        .resetstkyclr()
+                        .clr()
+                });
 
-        // Set baud rate divisors
-        let div = divisor(freq);
-        uart.uart0_ibrd() // set to integer part of the BRD, INT(BRD),
-            .write(|w| unsafe { w.divint().bits((div >> 6) as u16) });
-        uart.uart0_fbrd() // set to BRD % 64, fractional part
-            .write(|w| unsafe { w.divfrac().bits((div & 0b111111) as u8) });
+                // Enable power for uart with PWREN register key
+                uart.${concat(uart, $n, _gprcm)}(0)
+                    .${concat(uart, $n, _pwren)}()
+                    .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
 
-        // set all UART settings
-        uart.uart0_ctl0().write(|w| {
-            w.hse()
-                .ovs16()
-                .fen()
-                .enable()
-                .txe()
-                .enable()
-                .rxe()
-                .enable()
-                .mode()
-                .uart()
-                .ctsen()
-                .disable()
-                .rtsen()
-                .disable()
-        });
+                // delay while UART initializes
+                for _ in core::hint::black_box(0..32) {
+                    nop();
+                }
 
-        // Configure line control
-        uart.uart0_lcrh()
-            .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
+                // set up IOMUX to output
+                iomux.connect_pin($tx_iomux, $pf);
+                iomux.connect_pin($rx_iomux, $pf);
 
-        // enable UART
-        uart.uart0_ctl0().modify(|_, w| w.enable().enable());
+                // disable UART
+                uart.${concat(uart, $n, _ctl0)}().write(|w| w.enable().clear_bit());
 
-        Self { regs: uart }
-    }
+                // Select clock source (BUSCLK) and divisor
+                uart.${concat(uart, $n, _clksel)}().write(|w| w.busclk_sel().enable());
+                uart.${concat(uart, $n, _clkdiv)}().write(|w| w.ratio().div_by_1());
 
-    /// Write bytes to TX.
-    pub fn write_bytes(&self, bytes: &[u8]) {
-        let mut bytes = bytes;
-        while let Some((head, tail)) = bytes.split_first() {
-            if self.regs.uart0_stat().read().txff().bit_is_clear() {
-                self.regs
-                    .uart0_txdata()
-                    .write(|w| unsafe { w.data().bits(*head) });
-                bytes = tail;
+                // Set baud rate divisors
+                let div = divisor(freq);
+                uart.${concat(uart, $n, _ibrd)}()
+                    .write(|w| unsafe { w.divint().bits((div >> 6) as u16) });
+                uart.${concat(uart, $n, _fbrd)}()
+                    .write(|w| unsafe { w.divfrac().bits((div & 0b111111) as u8) });
+
+                // set all UART settings
+                uart.${concat(uart, $n, _ctl0)}().write(|w| {
+                    w.hse()
+                        .ovs16()
+                        .fen()
+                        .enable()
+                        .txe()
+                        .enable()
+                        .rxe()
+                        .enable()
+                        .mode()
+                        .uart()
+                        .ctsen()
+                        .disable()
+                        .rtsen()
+                        .disable()
+                });
+
+                // Configure line control
+                uart.${concat(uart, $n, _lcrh)}()
+                    .write(|w| w.pen().disable().wlen().databit8().stp2().disable());
+
+                // enable UART
+                uart.${concat(uart, $n, _ctl0)}().modify(|_, w| w.enable().enable());
+
+                Self { regs: uart }
+            }
+
+            /// Write bytes to TX.
+            pub fn write_bytes(&self, bytes: &[u8]) {
+                let mut bytes = bytes;
+                while let Some((head, tail)) = bytes.split_first() {
+                    if self.regs.${concat(uart, $n, _stat)}().read().txff().bit_is_clear() {
+                        self.regs
+                            .${concat(uart, $n, _txdata)}()
+                            .write(|w| unsafe { w.data().bits(*head) });
+                        bytes = tail;
+                    }
+                }
+                // wait for data to flush
+                while self.regs.${concat(uart, $n, _stat)}().read().txfe().is_cleared() {
+                    nop();
+                }
+            }
+
+            /// Read bytes from RX and return a Result.
+            pub fn read_bytes(&self, bytes: &mut [u8]) -> Result<(), HalError> {
+                for (i, b) in bytes.iter_mut().enumerate() {
+                    while self.regs.${concat(uart, $n, _stat)}().read().rxfe().bit_is_clear() {}
+                    let result = self.regs.${concat(uart, $n, _rxdata)}().read();
+                    if result.brkerr().bit_is_set()
+                        || result.frmerr().bit_is_set()
+                        || result.nerr().bit_is_set()
+                        || result.ovrerr().bit_is_set()
+                        || result.parerr().bit_is_set()
+                    {
+                        return Err(UartError::ReadError(i).into());
+                    }
+                    *b = result.data().bits();
+                }
+
+                Ok(())
+            }
+
+            /// TODO Utilize read_bytes() to read a singular byte and return a Result; if successful, return the bits that were read, else, Error.
+            pub fn read_byte(&self) -> Result<u8, HalError> {
+                let mut value = 0u8;
+                self.read_bytes(bytemuck::bytes_of_mut(&mut value))?;
+                Ok(value)
+            }
+
+            /// Returns whether either TX or RX is busy.
+            pub fn busy(&self) -> bool {
+                self.regs.${concat(uart, $n, _stat)}().read().busy().bit_is_set()
             }
         }
-        // wait for data to flush
-        while self.regs.uart0_stat().read().txfe().is_cleared() {
-            nop();
-        }
-    }
+    };
+}
 
-    /// Read bytes from RX and returns a Result.
-    pub fn read_bytes(&self, bytes: &mut [u8]) -> Result<(), HalError> {
-        for (i, b) in bytes.iter_mut().enumerate() {
-            while self.regs.uart0_stat().read().rxfe().bit_is_clear() {}
-            let result = self.regs.uart0_rxdata().read();
-            if result.brkerr().bit_is_set()
-                || result.frmerr().bit_is_set()
-                || result.nerr().bit_is_set()
-                || result.ovrerr().bit_is_set()
-                || result.parerr().bit_is_set()
-            {
-                return Err(UartError::ReadError(i).into());
-            }
-            *b = result.data().bits();
-        }
-
-        Ok(())
-    }
-
-    /// Returns whether either TX or RX is busy
-    pub fn busy(&self) -> bool {
-        self.regs.uart0_stat().read().busy().bit_is_set()
+// Uart{n}, tx iomux, rx iomux, iomux pin function (pf)
+uart_impl!(0, 25, 26, 2);
+impl Uart0 {
+    pub fn init(iomux: &Iomux, uart: mspm0l222x_pac::Uart0) {
+        let _ = UART.get_or_init(|| Uart0::new(iomux, uart, UART_FREQUENCY));
     }
 }
+
+// some UARTs can be connected to alternate pins (e.g. uart1 can also be connected to pincm10/pincm11)
+// these only reflect one configuration
+// TODO(wondering): check that this configuration works
+uart_impl!(1, 8, 9, 10);
+uart_impl!(2, 39, 40, 10);
+uart_impl!(3, 40, 39, 4);
+uart_impl!(4, 31, 32, 6);
 
 /// TODO AFTER CURSOR (nvm I did cursor and I still don't really get it)
 pub fn write_debug_format(args: fmt::Arguments) {

@@ -6,7 +6,8 @@ use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 static TRNG: OnceCell<Trng> = OnceCell::new();
 
-/// Initializes the trng unit, creating and returning an instance of Trng.
+/// Initializes the trng unit, creating and returning an instance of Trng; panic if initialization
+/// fails.
 pub fn trng() -> &'static Trng {
     TRNG.get().expect("TRNG not yet initialized")
 }
@@ -20,7 +21,7 @@ unsafe impl Send for Trng {}
 unsafe impl Sync for Trng {}
 
 impl Trng {
-    /// Creates a new TRNG instance and performs one-time hardware init.
+    // Creates a new TRNG instance and performs one-time hardware init.
     fn new(trng: TrngPeriph) -> Self {
         let this = Self { trng };
         this.init_trng();
@@ -28,7 +29,7 @@ impl Trng {
         this
     }
 
-    /// Initiate the hardware trng unit if it isn't already initiated before retrieving the trng unit.
+    /// Initiate the hardware trng unit if it isn't already initiated and retrieve it.
     pub fn init(trng: TrngPeriph) {
         let _ = TRNG.get_or_init(|| Trng::new(trng));
     }

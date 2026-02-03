@@ -32,8 +32,8 @@ pub enum GpioBank<'a> {
 
 static LED: OnceCell<Led> = OnceCell::new();
 
-/// Initializes leds, creating an instance of the LED before returning the Led instance.
-/// If the initialization fails, panic with an error message.
+/// Initializes leds, creating an instance of the LED before returning the Led instance; panic if
+/// the initializaiton fails.
 pub fn led() -> &'static Led {
     LED.get().expect("LEDs not yet initialized")
 }
@@ -88,7 +88,7 @@ pub fn enable_gpio(bank: &mut GpioBank, pin: u8) {
 }
 
 impl Led {
-    /// Initiates both leds with the iomux.
+    /// Initiates both leds with the iomux and retrieves them.
     pub fn init(iomux: &Iomux, gpioa: Gpioa, gpiob: Gpiob) {
         let _ = LED.get_or_init(|| Led::new(iomux, gpioa, gpiob));
     }
@@ -102,6 +102,7 @@ impl Led {
         // PINCM42 -> PA16
         // PINCM30 -> PB9
         // PINCM31 -> PB10
+
         iomux.connect_pin(42, 1);
         iomux.connect_pin(30, 1);
         iomux.connect_pin(31, 1);
