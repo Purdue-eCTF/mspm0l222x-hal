@@ -24,7 +24,7 @@ const CTRL_KEYSIZE_128: u32 = 1 << 3;
 
 static AES: OnceCell<AesAdv> = OnceCell::new();
 
-/// Initializes aes hardware, creating and returning an instance of Uart; panics if initialization fails.
+/// Initializes aes hardware, creating and returning an instance of AesAdv; panics if initialization fails.
 pub fn aes() -> &'static AesAdv {
     AES.get().expect("AES not initialized")
 }
@@ -64,10 +64,9 @@ impl AesAdv {
         addr.read_volatile()
     }
 
-    // TODO
+    // power and reset sequence
     fn hw_init(&self) {
         unsafe {
-            // power and reset sequence
             self.write_reg(REG_RSTCTL, (RSTCTL_KEY << 24) | 1); // clear reset sticky bit
             for _ in 0..100 { nop(); }
             self.write_reg(REG_RSTCTL, (RSTCTL_KEY << 24) | 0); // assert reset
