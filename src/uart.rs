@@ -9,11 +9,15 @@ use crate::{HalError, PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 const UART_FREQUENCY: u32 = 9600;
 
-static UART: OnceCell<Uart0> = OnceCell::new();
+static UART0: OnceCell<Uart0> = OnceCell::new();
+static UART1: OnceCell<Uart1> = OnceCell::new();
 
-pub type Uart = Uart0;
-pub fn uart() -> &'static Uart {
-    UART.get().expect("uart not yet initialized")
+/// Initializes uart, creating and returning an instance of Uart; panic if the initialization fails.
+pub fn uart0() -> &'static Uart0 {
+    UART0.get().expect("uart not yet initialized")
+}
+pub fn uart1() -> &'static Uart0 {
+    UART0.get().expect("uart not yet initialized")
 }
 
 // Taken from ti/driverlib/dl_uart.c
@@ -156,7 +160,7 @@ macro_rules! uart_impl {
 uart_impl!(0, 25, 26, 2);
 impl Uart0 {
     pub fn init(iomux: &Iomux, uart: mspm0l222x_pac::Uart0) {
-        let _ = UART.get_or_init(|| Uart0::new(iomux, uart, UART_FREQUENCY));
+        let _ = UART0.get_or_init(|| Uart0::new(iomux, uart, UART_FREQUENCY));
     }
 }
 
@@ -164,6 +168,11 @@ impl Uart0 {
 // these only reflect one configuration
 // TODO(wondering): check that this configuration works
 uart_impl!(1, 8, 9, 10);
+impl Uart1 {
+    pub fn init(iomux: &Iomux, uart: mspm0l222x_pac::Uart1) {
+        let _ = UART1.get_or_init(|| Uart1::new(iomux, uart, UART_FREQUENCY));
+    }
+}
 uart_impl!(2, 39, 40, 10);
 uart_impl!(3, 40, 39, 4);
 uart_impl!(4, 31, 32, 6);
@@ -175,7 +184,7 @@ pub fn write_debug_format(args: fmt::Arguments) {
     cursor.write_fmt(args).unwrap();
     let message_len = cursor.offset;
 
-    uart().write_bytes(&message_buf[..message_len]);
+    uart0().write_bytes(&message_buf[..message_len]);
 }
 
 /// Prints to the uart port
