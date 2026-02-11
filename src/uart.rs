@@ -7,7 +7,7 @@ use crate::cursor::Cursor;
 use crate::iomux::Iomux;
 use crate::{HalError, PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
-const UART_FREQUENCY: u32 = 9600;
+const UART_FREQUENCY: u32 = 115200;
 
 static UART0: OnceCell<Uart0> = OnceCell::new();
 static UART1: OnceCell<Uart1> = OnceCell::new();
