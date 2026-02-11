@@ -38,6 +38,10 @@ impl FlashController {
         Self { controller }
     }
 
+    pub fn init(controller: Flashctl) {
+        let _ = FLASH.get_or_init(|| FlashController::new(controller));
+    }
+
     pub unsafe fn write_page(
         &self,
         location: u32,
