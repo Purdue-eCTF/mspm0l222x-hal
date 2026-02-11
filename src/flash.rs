@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::HalError;
 
+const FLASH_PAGE_SIZE: usize = 1024;
 static FLASH: OnceCell<FlashController> = OnceCell::new();
 
 /// Global instance of flash controller
@@ -37,6 +38,58 @@ impl FlashController {
         Self { controller }
     }
 
+    pub fn write_page(&self, location: u32, page: &[u8; FLASH_PAGE_SIZE]) -> Result<(), HalError> {
+        let flash_start = 0x0;
+        let flash_len = 1 << 18; // 256KiB
+
+        // TODO: flash vs code + write protection checks
+        if !(flash_start <= location && location + 8 < flash_start + flash_len) {
+            return Err(FlashError::OobFlashAddress.into());
+        }
+        if location % 1024 != 0 {
+            return Err(FlashError::Unaligned(10).into());
+        }
+
+        self.controller
+            .flashctl_cmdtype()
+            .write(|w| w.command().program().size().oneword());
+        self.controller
+            .flashctl_cmdaddr()
+            .write(|w| unsafe { w.val().bits(location) });
+
+        let chunks: &[u32; 32] = bytemuck::cast_ref(page);
+
+        for chunk in chunks {
+            // TODO: this seems wildly unsafe but fine in practice
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    chunk as *const u32,
+                    self.controller.flashctl_cmddata0().as_ptr(),
+                    core::mem::size_of_val(chunk),
+                );
+            }
+            self.controller
+                .flashctl_cmdexec()
+                .write(|w| w.val().execute());
+
+            while !self
+                .controller
+                .flashctl_statcmd()
+                .read()
+                .cmddone()
+                .is_statnotdone()
+            {
+                nop();
+            }
+            self.check_error()?;
+
+            self.controller
+                .flashctl_cmdtype()
+                .write(|w| w.command().noop());
+        }
+
+        Ok(())
+    }
     pub fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
