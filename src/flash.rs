@@ -1,12 +1,22 @@
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
+use once_cell::sync::OnceCell;
 use thiserror::Error;
 
 use crate::HalError;
 
+static FLASH: OnceCell<FlashController> = OnceCell::new();
+
+/// Global instance of flash controller
+pub fn flash() -> &'static FlashController {
+    FLASH.get().expect("uart0 not yet initialized")
+}
+
 pub struct FlashController {
     controller: Flashctl,
 }
+
+unsafe impl Sync for FlashController {}
 
 #[derive(Error, Debug)]
 pub enum FlashError {

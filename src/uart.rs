@@ -14,10 +14,11 @@ static UART1: OnceCell<Uart1> = OnceCell::new();
 
 /// Initializes uart, creating and returning an instance of Uart; panic if the initialization fails.
 pub fn uart0() -> &'static Uart0 {
-    UART0.get().expect("uart not yet initialized")
+    UART0.get().expect("uart0 not yet initialized")
 }
-pub fn uart1() -> &'static Uart0 {
-    UART0.get().expect("uart not yet initialized")
+/// Global instance for UART1
+pub fn uart1() -> &'static Uart1 {
+    UART1.get().expect("uart1 not yet initialized")
 }
 
 // Taken from ti/driverlib/dl_uart.c
@@ -39,7 +40,6 @@ macro_rules! uart_impl {
         }
 
         // TODO: is this fine?
-        unsafe impl Send for ${concat(Uart, $n)} {}
         unsafe impl Sync for ${concat(Uart, $n)} {}
 
         impl ${concat(Uart, $n)} {
