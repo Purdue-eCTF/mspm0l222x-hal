@@ -38,7 +38,11 @@ impl FlashController {
         Self { controller }
     }
 
-    pub fn write_page(&self, location: u32, page: &[u8; FLASH_PAGE_SIZE]) -> Result<(), HalError> {
+    pub unsafe fn write_page(
+        &self,
+        location: u32,
+        page: &[u8; FLASH_PAGE_SIZE],
+    ) -> Result<(), HalError> {
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
 
@@ -90,7 +94,7 @@ impl FlashController {
 
         Ok(())
     }
-    pub fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
+    pub unsafe fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
 
@@ -149,12 +153,10 @@ impl FlashController {
         Ok(())
     }
 
-    pub fn write_data<T>(&self, location: u32, data: &T) -> Result<(), HalError>
+    pub unsafe fn write_data<T>(&self, location: u32, data: &T) -> Result<(), HalError>
     where
         T: bytemuck::Pod,
     {
-        // TODO: add reset protection?
-        // TODO: should this only accept exact-sized chunks?
         let data_bytes = bytemuck::bytes_of(data);
         let (chunks, rem): (&[[u8; 8]], &[u8]) = data_bytes.as_chunks();
 
@@ -169,15 +171,11 @@ impl FlashController {
             self.write_word(location + (chunks.len() as u32) * 8, last)?;
         }
 
-        // TODO: verify that flash write succeeded
-
         Ok(())
     }
 
     /// Erase a 1kb sector of flash
-    pub fn erase(&self, location: u32) -> Result<(), HalError> {
-        // TODO: location checks
-
+    pub unsafe fn erase(&self, location: u32) -> Result<(), HalError> {
         // address must be aligned to 1kb
         if location & 0x3ff != 0 {
             return Err(FlashError::Unaligned(10).into());
