@@ -38,7 +38,7 @@ impl AesAdv {
         let _ = AES.get_or_init(|| AesAdv::new(aes));
     }
 
-    pub fn set_key(&self, key: &[u8; 32]) {
+    pub fn set_key(&self, key: &[u8; 16]) {
         while self.aes.aesadv_ctrl().read().cntxt_rdy().is_notready() {}
 
         let key: &[u32; 4] = bytemuck::cast_ref(key);
@@ -49,12 +49,12 @@ impl AesAdv {
         self.aes.aesadv_key3().write(|w| unsafe { w.bits(key[3]) });
     }
 
-    pub fn encrypt_block(&self, plaintext: &[u8; 32]) -> [u8; 32] {
+    pub fn encrypt_block(&self, plaintext: &[u8; 16]) -> [u8; 16] {
         self.process_block(plaintext, true)
     }
 
-    fn process_block(&self, input_data: &[u8; 32], is_encrypt: bool) -> [u8; 32] {
-        let mut output_data = [0u8; 32];
+    fn process_block(&self, input_data: &[u8; 16], is_encrypt: bool) -> [u8; 16] {
+        let mut output_data = [0u8; 16];
         self.aes
             .aesadv_ctrl()
             .write(|w| w.keysize().k128().dir().bit(is_encrypt));
