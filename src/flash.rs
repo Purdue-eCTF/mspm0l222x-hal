@@ -235,5 +235,57 @@ impl FlashController {
         Ok(())
     }
 
+    pub fn write_unprotect(&self, address: u32, size: u32) -> Result<(), HalError> {
+        self.change_write_protection(address, size, false)
+    }
+
+    pub fn write_protect(&self, address: u32, size: u32) -> Result<(), HalError> {
+        self.change_write_protection(address, size, true)
+    }
+
+    // TODO: verify this
+    fn change_write_protection(
+        &self,
+        address: u32,
+        size: u32,
+        writeable: bool,
+    ) -> Result<(), HalError> {
+        let end_1kb = 32 * 1024;
+
+        let in_1kb_region = address + size <= end_1kb;
+        if in_1kb_region {
+            let start = address / 1024;
+            let end = (address + size).div_ceil(1024);
+            let mask: u32 = (start..end).map(|i| 1 << i).sum();
+
+            self.controller.flashctl_cmdweprota().modify(|r, w| {
+                let new = if writeable {
+                    r.bits() & !mask
+                } else {
+                    r.bits() | mask
+                };
+                unsafe { w.bits(new) }
+            });
+        }
+
+        let in_8kb_region = address + size > end_1kb;
+        if in_8kb_region {
+            // the first 4 bits correspond to same sectors as weprotA,
+            // so we can ignore everything below end_1kb
+            let start = end_1kb / 8192;
+            let end = (address + size).div_ceil(8192);
+            let mask: u32 = (start..end).map(|i| 1 << i).sum();
+            self.controller.flashctl_cmdweprotb().modify(|r, w| {
+                let new = if writeable {
+                    r.bits() & !mask
+                } else {
+                    r.bits() | mask
+                };
+                unsafe { w.bits(new) }
+            });
+        }
+
+        Ok(())
+    }
     // TODO: add verify command
 }
