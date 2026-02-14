@@ -236,11 +236,11 @@ impl FlashController {
     }
 
     pub fn write_unprotect(&self, address: u32, size: u32) -> Result<(), HalError> {
-        self.change_write_protection(address, size, false)
+        self.change_write_protection(address, size, true)
     }
 
     pub fn write_protect(&self, address: u32, size: u32) -> Result<(), HalError> {
-        self.change_write_protection(address, size, true)
+        self.change_write_protection(address, size, false)
     }
 
     // TODO: verify this
