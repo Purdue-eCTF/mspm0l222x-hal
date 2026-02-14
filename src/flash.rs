@@ -80,7 +80,7 @@ impl FlashController {
                 .flashctl_cmdexec()
                 .write(|w| w.val().execute());
 
-            while !self
+            while self
                 .controller
                 .flashctl_statcmd()
                 .read()
@@ -132,7 +132,7 @@ impl FlashController {
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
 
-        while !self
+        while self
             .controller
             .flashctl_statcmd()
             .read()
@@ -195,7 +195,7 @@ impl FlashController {
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
 
-        while !self
+        while self
             .controller
             .flashctl_statcmd()
             .read()
