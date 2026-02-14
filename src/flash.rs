@@ -254,9 +254,15 @@ impl FlashController {
             self.controller
                 .flashctl_cmdweprota()
                 .write(|w| unsafe { w.bits(0) });
+            self.controller
+                .flashctl_cmdweprotb()
+                .write(|w| unsafe { w.bits(0) });
         } else {
             self.controller
-                .flashctl_cmdweprota()
+                .flashctl_cmdweprotb()
+                .write(|w| unsafe { w.bits(!0) });
+            self.controller
+                .flashctl_cmdweprotb()
                 .write(|w| unsafe { w.bits(!0) });
         }
         // let end_1kb = 32 * 1024;
