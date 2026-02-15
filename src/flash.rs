@@ -235,21 +235,20 @@ impl FlashController {
         Ok(())
     }
 
-    pub fn write_unprotect(&self, address: u32, size: u32) -> Result<(), HalError> {
+    pub fn write_unprotect(&self, address: u32, size: u32) {
         self.change_write_protection(address, size, true)
     }
 
-    pub fn write_protect(&self, address: u32, size: u32) -> Result<(), HalError> {
+    pub fn write_protect(&self, address: u32, size: u32) {
         self.change_write_protection(address, size, false)
     }
 
     // TODO: verify this
-    fn change_write_protection(
-        &self,
-        address: u32,
-        size: u32,
-        writeable: bool,
-    ) -> Result<(), HalError> {
+    // from SDK:
+    // #define FLASHCTL_SYS_WEPROTAWIDTH 32
+    // #define FLASHCTL_SYS_WEPROTBWIDTH 16
+
+    fn change_write_protection(&self, address: u32, size: u32, writeable: bool) {
         if writeable {
             self.controller
                 .flashctl_cmdweprota()
@@ -260,10 +259,10 @@ impl FlashController {
         } else {
             self.controller
                 .flashctl_cmdweprotb()
-                .write(|w| unsafe { w.bits(!0) });
+                .write(|w| unsafe { w.bits(u32::MAX) });
             self.controller
                 .flashctl_cmdweprotb()
-                .write(|w| unsafe { w.bits(!0) });
+                .write(|w| unsafe { w.bits(u16::MAX as u32) });
         }
         // let end_1kb = 32 * 1024;
 
@@ -299,8 +298,5 @@ impl FlashController {
         //         unsafe { w.bits(new) }
         //     });
         // }
-
-        Ok(())
     }
-    // TODO: add verify command
 }
