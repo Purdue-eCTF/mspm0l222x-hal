@@ -31,6 +31,16 @@ pub enum FlashError {
     IllegalFlashAddress,
     #[error("Target flash address is write-protected")]
     WriteProtectedFlashAddress,
+    #[error(
+        "Program command failed because an attempt was made to program a stored 0 value to a 1"
+    )]
+    InvData,
+    #[error("Command failed because a bank has been set to a mode other than READ")]
+    InvalidMode,
+    #[error("Command failed due to verify error")]
+    FailVerify,
+    #[error("Checked error when command was not done")]
+    StatNotDone,
 }
 
 impl FlashController {
@@ -223,8 +233,19 @@ impl FlashController {
 
     fn check_error(&self) -> Result<(), HalError> {
         let stat = self.controller.flashctl_statcmd().read();
+
+        if stat.cmddone().is_statnotdone() {
+            return Err(FlashError::StatNotDone.into());
+        }
+
         if stat.cmdpass().is_statfail() {
-            if stat.faililladdr().bit_is_set() {
+            if stat.failinvdata().bit_is_set() {
+                return Err(FlashError::InvData.into());
+            } else if stat.failverify().bit_is_set() {
+                return Err(FlashError::FailVerify.into());
+            } else if stat.failmode().bit_is_set() {
+                return Err(FlashError::InvalidMode.into());
+            } else if stat.faililladdr().bit_is_set() {
                 return Err(FlashError::IllegalFlashAddress.into());
             } else if stat.failweprot().bit_is_set() {
                 return Err(FlashError::WriteProtectedFlashAddress.into());
@@ -232,6 +253,7 @@ impl FlashController {
 
             return Err(FlashError::Unknown.into());
         }
+
         Ok(())
     }
 
