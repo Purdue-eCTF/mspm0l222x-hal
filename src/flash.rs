@@ -1,11 +1,15 @@
+use core::arch::asm;
+
+use core::mem::size_of_val;
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
 use once_cell::sync::OnceCell;
 use thiserror::Error;
 
+use crate::uart::uart0;
 use crate::HalError;
 
-const FLASH_PAGE_SIZE: usize = 1024;
+pub const FLASH_PAGE_SIZE: usize = 1024;
 static FLASH: OnceCell<FlashController> = OnceCell::new();
 
 /// Global instance of flash controller
@@ -30,6 +34,8 @@ pub enum FlashError {
     #[error("Illegal flash address")]
     IllegalFlashAddress,
     #[error("Target flash address is write-protected")]
+    EraseWriteProtectedFlashAddress,
+    #[error("Target flash address is write-protected")]
     WriteProtectedFlashAddress,
     #[error(
         "Program command failed because an attempt was made to program a stored 0 value to a 1"
@@ -41,6 +47,10 @@ pub enum FlashError {
     FailVerify,
     #[error("Checked error when command was not done")]
     StatNotDone,
+    #[error("Address {0} was programmed without first being erased")]
+    NotBlank(u32),
+    #[error("Failed with misc. error")]
+    FailMisc,
 }
 
 impl FlashController {
@@ -52,144 +62,116 @@ impl FlashController {
         let _ = FLASH.get_or_init(|| FlashController::new(controller));
     }
 
-    pub unsafe fn write_page(
+    unsafe fn write_page(
         &self,
         location: u32,
         page: &[u8; FLASH_PAGE_SIZE],
     ) -> Result<(), HalError> {
+        if !self.check_blank(location) {
+            return Err(FlashError::NotBlank(location).into());
+        }
+
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
 
-        // TODO: flash vs code + write protection checks
         if !(flash_start <= location && location + 8 < flash_start + flash_len) {
             return Err(FlashError::OobFlashAddress.into());
         }
-        if location % 1024 != 0 {
+        if location % (FLASH_PAGE_SIZE as u32) != 0 {
             return Err(FlashError::Unaligned(10).into());
         }
 
-        self.controller
-            .flashctl_cmdtype()
-            .write(|w| w.command().program().size().oneword());
-        self.controller
-            .flashctl_cmdaddr()
-            .write(|w| unsafe { w.val().bits(location) });
-
-        let chunks: &[u32; 32] = bytemuck::cast_ref(page);
-
-        for chunk in chunks {
-            // TODO: this seems wildly unsafe but fine in practice
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    chunk as *const u32,
-                    self.controller.flashctl_cmddata0().as_ptr(),
-                    core::mem::size_of_val(chunk),
-                );
-            }
-            self.controller
-                .flashctl_cmdexec()
-                .write(|w| w.val().execute());
-
-            while self
-                .controller
-                .flashctl_statcmd()
-                .read()
-                .cmddone()
-                .is_statnotdone()
-            {
-                nop();
-            }
-            self.check_error()?;
-
+        let chunks: &[[u32; 2]; 128] = bytemuck::cast_ref(page);
+        for (i, chunk) in chunks.iter().enumerate() {
+            self.write_unprotect(location, size_of_val(chunk) as u32);
             self.controller
                 .flashctl_cmdtype()
-                .write(|w| w.command().noop());
+                .write(|w| w.command().program().size().oneword());
+
+            // enable 8 bytes of CMDBYTEEN for programming.
+            // include ECC bits
+            self.controller
+                .flashctl_cmdbyten()
+                .write(|w| w.bits(0x0003ffff));
+
+            self.controller
+                .flashctl_cmdaddr()
+                .write(|w| unsafe { w.bits(location + (i * size_of_val(chunk)) as u32) });
+            self.set_cmddata(chunk);
+            self.run_and_check()?;
         }
 
         Ok(())
     }
-    pub unsafe fn write_word(&self, location: u32, word: [u8; 8]) -> Result<(), HalError> {
-        let flash_start = 0x0;
-        let flash_len = 1 << 18; // 256KiB
 
-        // TODO: flash vs code + write protection checks
-        if !(flash_start <= location && location + 8 < flash_start + flash_len) {
-            return Err(FlashError::OobFlashAddress.into());
-        }
-        if location & 0b111 != 0 {
-            return Err(FlashError::Unaligned(3).into());
-        }
-
+    unsafe fn check_blank(&self, location: u32) -> bool {
         self.controller
             .flashctl_cmdtype()
-            .write(|w| w.command().program().size().oneword());
+            .write(|w| w.command().blankverify().size().oneword());
         self.controller
             .flashctl_cmdaddr()
             .write(|w| unsafe { w.val().bits(location) });
+        let _ = self.run_and_check();
 
-        // Flash is split into 64-bit "words", but we can only write 32 bits per operation, so the write is split across two registers.
-        // The register byte order is the same as the system byte order, so this will leave the data unchanged
-        let [a, b]: [u32; 2] = bytemuck::cast(word);
+        let stat = self.controller.flashctl_statcmd().read();
+        stat.cmdpass().is_statpass() && stat.failverify().is_statnofail()
+    }
 
-        self.controller
-            .flashctl_cmddata0()
-            .write(|w| unsafe { w.bits(a) });
-        self.controller
-            .flashctl_cmddata1()
-            .write(|w| unsafe { w.bits(b) });
+    fn set_cmddata(&self, data: &[u32; 2]) {
+        macro_rules! cmd {
+                ($count:literal) => {
+                    self.controller
+                        .${concat(flashctl_cmddata, $count)}()
+                        .write(|w| w.bits(data[$count]));
+                };
+            }
+        unsafe {
+            cmd!(0);
+            cmd!(1); // device only supports single-=word programming
+        }
+    }
 
-        self.controller
-            .flashctl_cmdexec()
-            .write(|w| w.val().execute());
+    pub unsafe fn partial_rewrite_page(
+        &self,
+        location: u32,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<(), HalError> {
+        if location & 0x3ff != 0 {
+            return Err(FlashError::Unaligned(10).into());
+        }
+        let offset = offset as usize;
 
-        while self
-            .controller
-            .flashctl_statcmd()
-            .read()
-            .cmddone()
-            .is_statnotdone()
-        {
-            nop();
+        if offset + data.len() > FLASH_PAGE_SIZE {
+            return Err(FlashError::OobFlashAddress.into());
         }
 
-        self.check_error()?;
+        let old = unsafe { *(location as *const [u8; FLASH_PAGE_SIZE]) };
+        let mut new = old.clone();
+        new[offset..offset + data.len()].copy_from_slice(data);
 
-        // prevent accidental operations (suggested by manual)
-        self.controller
-            .flashctl_cmdtype()
-            .write(|w| w.command().noop());
+        self.rewrite_page(location, &new)?;
 
-        // TODO: flush cache?
-        // from manual:
-        // Following programming of the flash memory, it is possible that there may be stale data in the processor's
-        // cache and prefetch logic. Before reading locations which were programmed, it is recommended to first flush
-        // the cache in the CPU subsystem.
         Ok(())
     }
 
-    pub unsafe fn write_data<T>(&self, location: u32, data: &T) -> Result<(), HalError>
-    where
-        T: bytemuck::Pod,
-    {
-        let data_bytes = bytemuck::bytes_of(data);
-        let (chunks, rem): (&[[u8; 8]], &[u8]) = data_bytes.as_chunks();
-
-        for (i, chunk) in chunks.iter().enumerate() {
-            self.write_word(location + 8 * (i as u32), *chunk)?;
-        }
-
-        if !rem.is_empty() {
-            // pad remaining data with zero bytes before writing
-            let mut last = [0u8; 8];
-            last[..rem.len()].copy_from_slice(rem);
-            self.write_word(location + (chunks.len() as u32) * 8, last)?;
-        }
+    pub unsafe fn rewrite_page(
+        &self,
+        location: u32,
+        data: &[u8; FLASH_PAGE_SIZE],
+    ) -> Result<(), HalError> {
+        self.write_unprotect(location, FLASH_PAGE_SIZE as u32);
+        self.erase_page(location)?; // sector erase is required to reprogram
+                                    // operations set write protection bits, so unclear them before writing
+        self.write_unprotect(location, FLASH_PAGE_SIZE as u32);
+        self.write_page(location, data)?;
+        self.write_protect(location, FLASH_PAGE_SIZE as u32);
 
         Ok(())
     }
 
     /// Erase a 1kb sector of flash
-    pub unsafe fn erase(&self, location: u32) -> Result<(), HalError> {
+    pub unsafe fn erase_page(&self, location: u32) -> Result<(), HalError> {
         // address must be aligned to 1kb
         if location & 0x3ff != 0 {
             return Err(FlashError::Unaligned(10).into());
@@ -201,6 +183,16 @@ impl FlashController {
         self.controller
             .flashctl_cmdaddr()
             .write(|w| unsafe { w.val().bits(location) });
+
+        self.run_and_check().map_err(|e| match e {
+            HalError::FlashError(FlashError::WriteProtectedFlashAddress) => {
+                FlashError::EraseWriteProtectedFlashAddress.into()
+            }
+            e => e,
+        })
+    }
+
+    fn run_and_check(&self) -> Result<(), HalError> {
         self.controller
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
@@ -221,12 +213,6 @@ impl FlashController {
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().noop());
-
-        // TODO: flush cache?
-        // from manual:
-        // Following programming of the flash memory, it is possible that there may be stale data in the processor's
-        // cache and prefetch logic. Before reading locations which were programmed, it is recommended to first flush
-        // the cache in the CPU subsystem.
 
         Ok(())
     }
@@ -269,56 +255,40 @@ impl FlashController {
     // from SDK:
     // #define FLASHCTL_SYS_WEPROTAWIDTH 32
     // #define FLASHCTL_SYS_WEPROTBWIDTH 16
-
     fn change_write_protection(&self, address: u32, size: u32, writeable: bool) {
-        if writeable {
-            self.controller
-                .flashctl_cmdweprota()
-                .write(|w| unsafe { w.bits(0) });
-            self.controller
-                .flashctl_cmdweprotb()
-                .write(|w| unsafe { w.bits(0) });
-        } else {
-            self.controller
-                .flashctl_cmdweprotb()
-                .write(|w| unsafe { w.bits(u32::MAX) });
-            self.controller
-                .flashctl_cmdweprotb()
-                .write(|w| unsafe { w.bits(u16::MAX as u32) });
+        let flash_page = FLASH_PAGE_SIZE as u32;
+        let end_1kb_per = 32 * flash_page;
+        let in_1kb_region = address + size <= end_1kb_per;
+        if in_1kb_region {
+            let start = address / flash_page;
+            let end = (address + size).div_ceil(flash_page);
+            let mask: u32 = (start..end).map(|i| 1 << i).sum();
+
+            self.controller.flashctl_cmdweprota().modify(|r, w| {
+                let new = if writeable {
+                    r.bits() & !mask
+                } else {
+                    r.bits() | mask
+                };
+                unsafe { w.bits(new) }
+            });
         }
-        // let end_1kb = 32 * 1024;
 
-        // let in_1kb_region = address + size <= end_1kb;
-        // if in_1kb_region {
-        //     let start = address / 1024;
-        //     let end = (address + size).div_ceil(1024);
-        //     let mask: u32 = (start..end).map(|i| 1 << i).sum();
-
-        //     self.controller.flashctl_cmdweprota().modify(|r, w| {
-        //         let new = if writeable {
-        //             r.bits() & !mask
-        //         } else {
-        //             r.bits() | mask
-        //         };
-        //         unsafe { w.bits(new) }
-        //     });
-        // }
-
-        // let in_8kb_region = address + size > end_1kb;
-        // if in_8kb_region {
-        //     // the first 4 bits correspond to same sectors as weprotA,
-        //     // so we can ignore everything below end_1kb
-        //     let start = end_1kb / 8192;
-        //     let end = (address + size).div_ceil(8192);
-        //     let mask: u32 = (start..end).map(|i| 1 << i).sum();
-        //     self.controller.flashctl_cmdweprotb().modify(|r, w| {
-        //         let new = if writeable {
-        //             r.bits() & !mask
-        //         } else {
-        //             r.bits() | mask
-        //         };
-        //         unsafe { w.bits(new) }
-        //     });
-        // }
+        let in_8kb_region = address + size > end_1kb_per;
+        if in_8kb_region {
+            // the first 4 bits correspond to same sectors as weprotA,
+            // so we can ignore everything below end_1kb
+            let start = end_1kb_per / (8 * flash_page);
+            let end = (address + size).div_ceil(8 * flash_page);
+            let mask: u32 = (start..end).map(|i| 1 << i).sum();
+            self.controller.flashctl_cmdweprotb().modify(|r, w| {
+                let new = if writeable {
+                    r.bits() & !mask
+                } else {
+                    r.bits() | mask
+                };
+                unsafe { w.bits(new) }
+            });
+        }
     }
 }
