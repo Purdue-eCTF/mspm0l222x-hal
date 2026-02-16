@@ -59,7 +59,7 @@ impl FlashController {
         let _ = FLASH.get_or_init(|| FlashController::new(controller));
     }
 
-    unsafe fn write_page(
+    pub unsafe fn write_page(
         &self,
         location: u32,
         page: &[u8; FLASH_PAGE_SIZE],
@@ -82,7 +82,7 @@ impl FlashController {
         Ok(())
     }
 
-    unsafe fn write_word(&self, location: u32, data: &[u8; 8]) -> Result<(), HalError> {
+    pub unsafe fn write_word(&self, location: u32, data: &[u8; 8]) -> Result<(), HalError> {
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().program().size().oneword());
@@ -127,30 +127,6 @@ impl FlashController {
             cmd!(0);
             cmd!(1); // device only supports single-=word programming
         }
-    }
-
-    pub unsafe fn partial_rewrite_page(
-        &self,
-        location: u32,
-        offset: u32,
-        data: &[u8],
-    ) -> Result<(), HalError> {
-        if location & 0x3ff != 0 {
-            return Err(FlashError::Unaligned(10).into());
-        }
-        let offset = offset as usize;
-
-        if offset + data.len() > FLASH_PAGE_SIZE {
-            return Err(FlashError::OobFlashAddress.into());
-        }
-
-        let old = unsafe { *(location as *const [u8; FLASH_PAGE_SIZE]) };
-        let mut new = old.clone();
-        new[offset..offset + data.len()].copy_from_slice(data);
-
-        self.rewrite_page(location, &new)?;
-
-        Ok(())
     }
 
     pub unsafe fn rewrite_page(
