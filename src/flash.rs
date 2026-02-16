@@ -1,12 +1,9 @@
-use core::arch::asm;
-
 use core::mem::size_of_val;
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
 use once_cell::sync::OnceCell;
 use thiserror::Error;
 
-use crate::uart::uart0;
 use crate::HalError;
 
 pub const FLASH_PAGE_SIZE: usize = 1024;
@@ -67,10 +64,6 @@ impl FlashController {
         location: u32,
         page: &[u8; FLASH_PAGE_SIZE],
     ) -> Result<(), HalError> {
-        if !self.check_blank(location) {
-            return Err(FlashError::NotBlank(location).into());
-        }
-
         let flash_start = 0x0;
         let flash_len = 1 << 18; // 256KiB
 
@@ -81,30 +74,35 @@ impl FlashController {
             return Err(FlashError::Unaligned(10).into());
         }
 
-        let chunks: &[[u32; 2]; 128] = bytemuck::cast_ref(page);
+        let chunks: &[[u8; 8]; 128] = bytemuck::cast_ref(page);
         for (i, chunk) in chunks.iter().enumerate() {
-            self.write_unprotect(location, size_of_val(chunk) as u32);
-            self.controller
-                .flashctl_cmdtype()
-                .write(|w| w.command().program().size().oneword());
-
-            // enable 8 bytes of CMDBYTEEN for programming.
-            // include ECC bits
-            self.controller
-                .flashctl_cmdbyten()
-                .write(|w| w.bits(0x0003ffff));
-
-            self.controller
-                .flashctl_cmdaddr()
-                .write(|w| unsafe { w.bits(location + (i * size_of_val(chunk)) as u32) });
-            self.set_cmddata(chunk);
-            self.run_and_check()?;
+            self.write_word(location + (i * size_of_val(chunk)) as u32, chunk)?;
         }
 
         Ok(())
     }
 
-    unsafe fn check_blank(&self, location: u32) -> bool {
+    unsafe fn write_word(&self, location: u32, data: &[u8; 8]) -> Result<(), HalError> {
+        self.controller
+            .flashctl_cmdtype()
+            .write(|w| w.command().program().size().oneword());
+
+        // enable 8 bytes of CMDBYTEEN for programming.
+        // include ECC bits
+        self.controller
+            .flashctl_cmdbyten()
+            .write(|w| w.bits(0x0003ffff));
+
+        self.controller
+            .flashctl_cmdaddr()
+            .write(|w| unsafe { w.bits(location) });
+        self.set_cmddata(bytemuck::cast_ref(data));
+        self.run_and_check()?;
+
+        Ok(())
+    }
+
+    pub fn is_blank(&self, location: u32) -> bool {
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().blankverify().size().oneword());
@@ -160,13 +158,8 @@ impl FlashController {
         location: u32,
         data: &[u8; FLASH_PAGE_SIZE],
     ) -> Result<(), HalError> {
-        self.write_unprotect(location, FLASH_PAGE_SIZE as u32);
-        self.erase_page(location)?; // sector erase is required to reprogram
-                                    // operations set write protection bits, so unclear them before writing
-        self.write_unprotect(location, FLASH_PAGE_SIZE as u32);
+        self.erase_page(location)?;
         self.write_page(location, data)?;
-        self.write_protect(location, FLASH_PAGE_SIZE as u32);
-
         Ok(())
     }
 
@@ -192,7 +185,25 @@ impl FlashController {
         })
     }
 
+    fn get_write_permissions(&self) -> (u32, u32) {
+        (
+            self.controller.flashctl_cmdweprota().read().bits(),
+            self.controller.flashctl_cmdweprotb().read().bits(),
+        )
+    }
+
+    fn set_write_permissions(&self, permissions: (u32, u32)) {
+        self.controller
+            .flashctl_cmdweprota()
+            .write(|w| unsafe { w.bits(permissions.0) });
+        self.controller
+            .flashctl_cmdweprotb()
+            .write(|w| unsafe { w.bits(permissions.1) });
+    }
+
     fn run_and_check(&self) -> Result<(), HalError> {
+        let perms = self.get_write_permissions();
+
         self.controller
             .flashctl_cmdexec()
             .write(|w| w.val().execute());
@@ -207,14 +218,16 @@ impl FlashController {
             nop();
         }
 
-        self.check_error()?;
+        let err = self.check_error();
 
         // prevent accidental operations (suggested by manual)
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().noop());
 
-        Ok(())
+        // most operations lock write permissions, so restore them to what they were before
+        self.set_write_permissions(perms);
+        err
     }
 
     fn check_error(&self) -> Result<(), HalError> {
@@ -251,7 +264,6 @@ impl FlashController {
         self.change_write_protection(address, size, false)
     }
 
-    // TODO: verify this
     // from SDK:
     // #define FLASHCTL_SYS_WEPROTAWIDTH 32
     // #define FLASHCTL_SYS_WEPROTBWIDTH 16
