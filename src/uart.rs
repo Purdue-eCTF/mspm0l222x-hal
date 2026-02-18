@@ -25,12 +25,22 @@ pub fn uart1() -> &'static Uart1 {
 const fn divisor(freq: u32) -> u32 {
     ((crate::SYSOSC_FREQUENCY * 8) / freq).div_ceil(2)
 }
+
 #[derive(Error, Debug)]
 pub enum UartError {
     #[error("Read error; failed after reading {0} bytes")]
-    ReadError(usize),
+    ReadError(usize, ReadErrorKind),
     #[error("Write error")]
     WriteError,
+}
+
+#[derive(Debug)]
+pub enum ReadErrorKind {
+    BrkErr,
+    FrmErr,
+    NErr,
+    OvrErr,
+    ParErr,
 }
 
 macro_rules! uart_impl {
@@ -128,14 +138,19 @@ macro_rules! uart_impl {
                 for (i, b) in bytes.iter_mut().enumerate() {
                     while self.regs.${concat(uart, $n, _stat)}().read().rxfe().bit_is_set() {}
                     let result = self.regs.${concat(uart, $n, _rxdata)}().read();
-                    if result.brkerr().bit_is_set()
-                        || result.frmerr().bit_is_set()
-                        || result.nerr().bit_is_set()
-                        || result.ovrerr().bit_is_set()
-                        || result.parerr().bit_is_set()
-                    {
-                        return Err(UartError::ReadError(i).into());
+
+                    let err = match () {
+                        _ if result.brkerr().bit_is_set() => Some(ReadErrorKind::BrkErr),
+                        _ if result.frmerr().bit_is_set() => Some(ReadErrorKind::FrmErr),
+                        _ if result.nerr().bit_is_set() => Some(ReadErrorKind::NErr),
+                        _ if result.ovrerr().bit_is_set() => Some(ReadErrorKind::OvrErr),
+                        _ if result.parerr().bit_is_set() => Some(ReadErrorKind::ParErr),
+                        _ => None
+                    };
+                    if let Some(kind) = err {
+                        return Err(UartError::ReadError(i, kind).into());
                     }
+
                     *b = result.data().bits();
                 }
 
