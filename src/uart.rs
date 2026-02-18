@@ -28,8 +28,8 @@ const fn divisor(freq: u32) -> u32 {
 
 #[derive(Error, Debug)]
 pub enum UartError {
-    #[error("Read error; failed after reading {0} bytes")]
-    ReadError(usize, ReadErrorKind),
+    #[error("Read error; failed after reading {0} bytes ({1:?}, {2})")]
+    ReadError(usize, ReadErrorKind, &'static str),
     #[error("Write error")]
     WriteError,
 }
@@ -148,7 +148,7 @@ macro_rules! uart_impl {
                         _ => None
                     };
                     if let Some(kind) = err {
-                        return Err(UartError::ReadError(i, kind).into());
+                        return Err(UartError::ReadError(i, kind, core::any::type_name::<Self>()).into());
                     }
 
                     *b = result.data().bits();
