@@ -126,7 +126,7 @@ macro_rules! uart_impl {
 
             pub fn read_bytes(&self, bytes: &mut [u8]) -> Result<(), HalError> {
                 for (i, b) in bytes.iter_mut().enumerate() {
-                    while self.regs.${concat(uart, $n, _stat)}().read().rxfe().bit_is_clear() {}
+                    while self.regs.${concat(uart, $n, _stat)}().read().rxfe().bit_is_set() {}
                     let result = self.regs.${concat(uart, $n, _rxdata)}().read();
                     if result.brkerr().bit_is_set()
                         || result.frmerr().bit_is_set()
