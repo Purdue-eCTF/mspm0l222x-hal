@@ -9,12 +9,18 @@ pub enum PullMode {
     Down,
 }
 
+#[derive(PartialEq)]
+pub enum InOut {
+    Input,
+    Output,
+}
+
 impl<'a> Iomux<'a> {
     pub fn new(iomux: &'a mspm0l222x_pac::Iomux) -> Self {
         Self { iomux }
     }
 
-    pub fn connect_pin(&self, pin: usize, function: u8, pull: PullMode) {
+    pub fn connect_pin(&self, pin: usize, function: u8, in_mode: InOut, pull_mode: PullMode) {
         assert!(
             1 <= pin && pin <= 74,
             "valid pins are 1 <= n <= 74, not {pin}"
@@ -28,10 +34,12 @@ impl<'a> Iomux<'a> {
             unsafe { w.pf().bits(function) }
                 .pc()
                 .connected()
+                .inena()
+                .bit(in_mode == InOut::Input)
                 .pipu()
-                .bit(pull == PullMode::Up)
+                .bit(pull_mode == PullMode::Up)
                 .pipd()
-                .bit(pull == PullMode::Down)
+                .bit(pull_mode == PullMode::Down)
         });
     }
 }
