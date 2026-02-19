@@ -1,8 +1,10 @@
 use mspm0l222x_pac::{Gpioa, Gpiob};
 use once_cell::sync::OnceCell;
 
-use crate::iomux::Iomux;
-use crate::{PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
+use crate::{
+    iomux::{Iomux, PullMode},
+    PWREN_WRITE_KEY, RSTCTL_WRITE_KEY,
+};
 
 pub struct Led {
     gpioa: Gpioa,
@@ -92,9 +94,9 @@ impl Led {
         // PINCM30 -> PB9
         // PINCM31 -> PB10
 
-        iomux.connect_pin(42, 1);
-        iomux.connect_pin(30, 1);
-        iomux.connect_pin(31, 1);
+        iomux.connect_pin(42, 1, PullMode::None);
+        iomux.connect_pin(30, 1, PullMode::None);
+        iomux.connect_pin(31, 1, PullMode::None);
 
         enable_gpio(&mut GpioBank::GpioA(&gpioa), 16);
         enable_gpio(&mut GpioBank::GpioB(&gpiob), 10);

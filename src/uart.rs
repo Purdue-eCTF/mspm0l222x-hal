@@ -4,7 +4,7 @@ use once_cell::sync::OnceCell;
 use thiserror::Error;
 
 use crate::cursor::Cursor;
-use crate::iomux::Iomux;
+use crate::iomux::{Iomux, PullMode};
 use crate::{HalError, PWREN_WRITE_KEY, RSTCTL_WRITE_KEY};
 
 const UART_FREQUENCY: u32 = 115200;
@@ -73,8 +73,8 @@ macro_rules! uart_impl {
                 }
 
                 // set up IOMUX to output
-                iomux.connect_pin($tx_iomux, $pf);
-                iomux.connect_pin($rx_iomux, $pf);
+                iomux.connect_pin($tx_iomux, $pf, PullMode::None);
+                iomux.connect_pin($rx_iomux, $pf, PullMode::Up);
 
                 // disable UART
                 uart.${concat(uart, $n, _ctl0)}().write(|w| w.enable().clear_bit());
