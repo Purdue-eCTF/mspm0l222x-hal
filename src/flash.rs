@@ -11,9 +11,25 @@ static FLASH: OnceCell<FlashController> = OnceCell::new();
 
 /// Global instance of flash controller
 pub fn flash() -> &'static FlashController {
-    FLASH.get().expect("uart0 not yet initialized")
+    FLASH.get().expect("flash not yet initialized")
 }
 
+/// Flash controller peripheral.
+/// On MSPM0 devices, the flash controller can only program
+/// an address if that address has not already been programmed.
+/// To accomplish this, most flash writes are usually preceded by an erase.
+/// The `FlashController::is_blank` function can be used to check if an address
+/// has been erased.
+/// ```rust
+/// let peripherals = Peripherals::take().unwrap();
+/// FlashController::init(peripherals.flashctl);
+/// let flash = flash();
+/// let loc = 0xabcdef;
+/// unsafe { flash.erase_page(loc).unwrap() };
+/// assert!(flash.is_blank(loc))
+/// unsafe { flash.write_word(loc, &[0; _]).unwrap() };
+/// assert_eq!(unsafe {*(loc as *const u64)}, 0);
+/// ```
 pub struct FlashController {
     controller: Flashctl,
 }
@@ -59,6 +75,12 @@ impl FlashController {
         let _ = FLASH.get_or_init(|| FlashController::new(controller));
     }
 
+    /// Write `self::FLASH_PAGE_SIZE` bytes to a page-aligned location.
+    /// # Safety
+    ///
+    /// This operation overwrites any data already existing in flash.
+    /// Thus, it should not be called unless the caller knows that no other code
+    /// is using the location to store data.
     pub unsafe fn write_page(
         &self,
         location: u32,
@@ -70,7 +92,7 @@ impl FlashController {
         if !(flash_start <= location && location + 8 < flash_start + flash_len) {
             return Err(FlashError::OobFlashAddress.into());
         }
-        if location % (FLASH_PAGE_SIZE as u32) != 0 {
+        if !location.is_multiple_of(FLASH_PAGE_SIZE as u32) {
             return Err(FlashError::Unaligned(10).into());
         }
 
@@ -82,13 +104,19 @@ impl FlashController {
         Ok(())
     }
 
+    /// Write one flash word (8 bytes) to a location in flash.
+    /// # Safety
+    ///
+    /// This operation overwrites any data already existing in flash.
+    /// Thus, it should not be called unless the caller knows that no other code
+    /// is using the location to store data.
     pub unsafe fn write_word(&self, location: u32, data: &[u8; 8]) -> Result<(), HalError> {
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().program().size().oneword());
 
-        // enable 8 bytes of CMDBYTEEN for programming.
-        // include ECC bits
+        // enable 8 bytes of CMDBYTEEN for programming,
+        // and also include ECC bits
         self.controller
             .flashctl_cmdbyten()
             .write(|w| w.bits(0x0003ffff));
@@ -125,10 +153,17 @@ impl FlashController {
             }
         unsafe {
             cmd!(0);
-            cmd!(1); // device only supports single-=word programming
+            cmd!(1); // device only supports single-word programming
         }
     }
 
+    /// Rewrite a 1kb sector of flash
+    /// # Safety
+    ///
+    /// This operation erases an entire page of flash, leaving it in a nondeterministic state.
+    /// Thus, it should not be called unless the caller knows that no other code
+    /// is using the location to store data, and the new page should not be
+    /// read until a known value has been written to it.
     pub unsafe fn rewrite_page(
         &self,
         location: u32,
@@ -140,11 +175,18 @@ impl FlashController {
     }
 
     /// Erase a 1kb sector of flash
+    /// # Safety
+    ///
+    /// This operation erases an entire page of flash, leaving it in a nondeterministic state.
+    /// Thus, it should not be called unless the caller knows that no other code
+    /// is using the location to store data, and the new page should not be
+    /// read until a known value has been written to it.
     pub unsafe fn erase_page(&self, location: u32) -> Result<(), HalError> {
         // address must be aligned to 1kb
-        if location & 0x3ff != 0 {
+        if !location.is_multiple_of(FLASH_PAGE_SIZE as u32) {
             return Err(FlashError::Unaligned(10).into());
         }
+
         self.controller
             .flashctl_cmdtype()
             .write(|w| w.command().erase().size().sector());

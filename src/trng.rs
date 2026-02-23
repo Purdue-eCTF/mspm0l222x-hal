@@ -18,10 +18,64 @@ unsafe impl Send for Trng {}
 unsafe impl Sync for Trng {}
 
 impl Trng {
-    // creates a new TRNG instance and performs one-time hardware init.
+    /// creates a new TRNG instance and performs one-time hardware init.
     fn new(trng: TrngPeriph) -> Self {
         let this = Self { trng };
-        this.init_trng();
+
+        // reset and power on TRNG
+        let gprcm = this.trng.trng_gprcm(0);
+        gprcm.trng_rstctl().write(|w| {
+            unsafe { w.bits(RSTCTL_WRITE_KEY) }
+                .resetassert()
+                .assert()
+                .resetstkyclr()
+                .clr()
+        });
+
+        gprcm
+            .trng_pwren()
+            .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
+
+        // wait for peripheral to initialize
+        for _ in core::hint::black_box(0..32) {
+            nop();
+        }
+
+        // TODO: why this particular division?
+        this.trng.trng_clkdivide().write(|w| w.ratio().div_by_4());
+
+        this.trng.trng_ctl().write(|w| w.cmd().norm_func());
+        this.wait_for_cmd_done();
+
+        this.run_startup_tests();
+
+        // clear interrupt status that may have triggered during tests
+        this.trng.trng_iclr().write(|w| {
+            w.irq_captured_rdy()
+                .set_bit()
+                .irq_cmd_done()
+                .set_bit()
+                .irq_cmd_fail()
+                .set_bit()
+        });
+
+        // Decimate by 8 to increase entropy per sample
+        // From docs: When the DECIM_RATE field is changed, a NORM_FUNC command must be re-sent to the TRNG for
+        // the new rate to take effect
+        this.trng
+            .trng_ctl()
+            .write(|w| unsafe { w.cmd().norm_func().decim_rate().bits(0x7) });
+
+        // wait for the command to be accepted by the state machine
+        this.wait_for_cmd_done();
+
+        // enable hardware health monitoring interrupt mask
+        this.trng
+            .trng_imask()
+            .write(|w| w.irq_health_fail().set_bit());
+
+        // discard the first sample after startup tests
+        let _ = this.word();
 
         this
     }
@@ -30,44 +84,11 @@ impl Trng {
         let _ = TRNG.get_or_init(|| Trng::new(trng));
     }
 
-    // TRNG initialization
-    fn init_trng(&self) {
-        self.power_on();
-        self.configure_clkdivide();
-
-        // must be in NORM_FUNC before issuing commands
-        self.trng.trng_ctl().write(|w| unsafe { w.cmd().bits(0x3) });
-        self.wait_for_cmd_done();
-
-        // run tests with delays to ensure stability
-        self.run_startup_tests();
-
-        // clear interrupt status that may have triggered during tests
-        self.trng.trng_iclr().write(|w| w.irq_captured_rdy().set_bit());
-
-        // enter NORM_FUNC to start data generation
-        self.configure_ctl_norm_func();
-        
-        // wait for the command to be accepted by the state machine
-        self.wait_for_cmd_done();
-
-        // enable hardware health monitoring interrupt mask
-        self.trng
-            .trng_imask()
-            .write(|w| w.irq_health_fail().set_bit());
-
-        // discard the first sample after startup tests
-        let _ = self.word();
-    }
-
     fn run_startup_tests(&self) {
-        // execute digital startup self-test
-        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
-
-        // Execute digital startup self-test
         self.trng
-            .trng_ctl()
-            .write(|w| unsafe { w.cmd().bits(0x1) });
+            .trng_iclr()
+            .write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
+        self.trng.trng_ctl().modify(|_, w| w.cmd().pwrup_dig());
 
         self.wait_for_cmd_done();
 
@@ -77,11 +98,11 @@ impl Trng {
         }
 
         // execute analog startup self-test
-        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
-
         self.trng
-            .trng_ctl()
-            .write(|w| unsafe { w.cmd().bits(0x2) });
+            .trng_iclr()
+            .write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
+
+        self.trng.trng_ctl().modify(|_, w| w.cmd().pwrup_ana());
 
         self.wait_for_cmd_done();
 
@@ -96,49 +117,6 @@ impl Trng {
             panic!("TRNG Analog Test Fail");
         }
         // trng auto-returns to NORM_FUNC after analog test
-    }
-
-    // power up the TRNG block using the GPRCM reset + pwren sequence.
-    fn power_on(&self) {
-        let gprcm = self.trng.trng_gprcm(0);
-
-        // assert reset
-        gprcm.trng_rstctl().write(|w| {
-            unsafe { w.bits(RSTCTL_WRITE_KEY) }
-                .resetassert().assert()
-        });
-
-        // de-assert reset
-        gprcm.trng_rstctl().write(|w| {
-            unsafe { w.bits(RSTCTL_WRITE_KEY) }
-                .resetassert().clear_bit()
-                .resetstkyclr().clr()
-        });
-
-        // enable TRNG power
-        gprcm
-            .trng_pwren()
-            .write(|w| unsafe { w.bits(PWREN_WRITE_KEY) }.enable().set_bit());
-
-        // wait for peripheral to initialize
-    }
-
-    fn configure_clkdivide(&self) {
-        self.trng
-            .trng_clkdivide()
-            .write(|w| unsafe { w.ratio().bits(0x3) });
-    }
-
-    // TRNG in NORM_FUNC mode
-    fn configure_ctl_norm_func(&self) {
-        self.trng.trng_iclr().write(|w| w.irq_cmd_done().set_bit().irq_cmd_fail().set_bit());
-
-        self.trng.trng_ctl().write(|w| unsafe {
-            w.cmd()
-                .bits(0x3) // NORM_FUNC
-                .decim_rate()
-                .bits(0x3) // decimate by 4
-        });
     }
 
     // helper to block until the TRNG state machine completes the command
@@ -161,6 +139,11 @@ impl Trng {
     // returns the raw 32 bit TRNG output word
     pub fn word(&self) -> u32 {
         // verify FSM is not in error state due to runtime health fail
+        // TODO: from docs:
+        // Current state of the front end FSM (behind a clock domain crossing).
+        // 2 reads are REQUIRED as there is a chance of metastability when
+        // reading this
+
         if self.trng.trng_stat().read().fsm_state().bits() == 0xA {
             panic!("TRNG Health Fail");
         }

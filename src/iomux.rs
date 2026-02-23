@@ -22,7 +22,7 @@ impl<'a> Iomux<'a> {
 
     pub fn connect_pin(&self, pin: usize, function: u8, in_mode: InOut, pull_mode: PullMode) {
         assert!(
-            1 <= pin && pin <= 74,
+            (1..=74).contains(&pin),
             "valid pins are 1 <= n <= 74, not {pin}"
         );
         assert!(

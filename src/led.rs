@@ -2,7 +2,7 @@ use mspm0l222x_pac::{Gpioa, Gpiob};
 use once_cell::sync::OnceCell;
 
 use crate::{
-    iomux::{Iomux, PullMode, InOut},
+    iomux::{InOut, Iomux, PullMode},
     PWREN_WRITE_KEY, RSTCTL_WRITE_KEY,
 };
 
