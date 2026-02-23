@@ -3,14 +3,15 @@
 
 use thiserror::Error;
 
+pub mod aes;
 pub mod cursor;
 pub mod flash;
 pub mod iomux;
 pub mod led;
 pub mod mpu;
+pub mod timer;
 pub mod trng;
 pub mod uart;
-pub mod aes;
 
 // clock speeds of base clocks
 pub const SYSOSC_FREQUENCY: u32 = 32_000_000;
