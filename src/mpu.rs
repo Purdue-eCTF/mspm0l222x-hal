@@ -97,6 +97,13 @@ impl Mpu {
         ((self.regs._type.read() >> 8) & 0xff) as u8
     }
 
+    /// Returns true when an MPU is implemented and exposes at least one region.
+    ///
+    /// On ARM Cortex-M, this is determined from MPU.TYPE.DREGION.
+    pub fn is_available(&self) -> bool {
+        self.region_count() > 0
+    }
+
     unsafe fn set_region_inner(&mut self, rbar: u32, rasr: u32) {
         self.regs.rbar.write(rbar);
         self.regs.rasr.write(rasr);
