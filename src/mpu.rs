@@ -50,6 +50,19 @@ pub enum MpuRegionSize {
     KibiByte128 = 0x10,
     KibiByte256 = 0x11,
     KibiByte512 = 0x12,
+    MibiByte1 = 0x13,
+    MibiByte2 = 0x14,
+    MibiByte4 = 0x15,
+    MibiByte8 = 0x16,
+    MibiByte16 = 0x17,
+    MibiByte32 = 0x18,
+    MibiByte64 = 0x19,
+    MibiByte128 = 0x1A,
+    MibiByte256 = 0x1B,
+    MibiByte512 = 0x1C,
+    GibiByte1 = 0x1D,
+    GibiByte2 = 0x1E,
+    GibiByte4 = 0x1F,
 }
 
 /// Cache/shareability policy for an MPU region.
