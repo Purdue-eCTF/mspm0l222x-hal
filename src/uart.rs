@@ -181,7 +181,8 @@ impl Uart0 {
 // some UARTs can be connected to alternate pins.
 // Use UART1 on PINCM19/PINCM20 (GPIOA.8/GPIOA.9), which matches the transfer
 // interface wiring used by the reference board configuration.
-uart_impl!(1, 19, 20, 10);
+// On these pins, UART1 uses peripheral function 2.
+uart_impl!(1, 19, 20, 2);
 impl Uart1 {
     pub fn init(iomux: &Iomux, uart: mspm0l222x_pac::Uart1) {
         let _ = UART1.get_or_init(|| Uart1::new(iomux, uart, UART_FREQUENCY));
