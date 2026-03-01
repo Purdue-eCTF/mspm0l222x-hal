@@ -42,6 +42,34 @@ pub enum ReadErrorKind {
     ParErr,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxInterruptThreshold {
+    QuarterFull,
+    HalfFull,
+    ThreeQuartersFull,
+    Full,
+    OneByte,
+}
+
+impl RxInterruptThreshold {
+    const fn bits(self) -> u8 {
+        match self {
+            Self::QuarterFull => 1,
+            Self::HalfFull => 2,
+            Self::ThreeQuartersFull => 3,
+            Self::Full => 5,
+            Self::OneByte => 7,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterruptCause {
+    Timeout,
+    Threshold,
+    Unknown,
+}
+
 macro_rules! uart_impl {
     ($n:literal, $tx_iomux:literal, $rx_iomux:literal, $pf:literal) => {
         pub struct ${concat(Uart, $n)} {
@@ -165,6 +193,78 @@ macro_rules! uart_impl {
             /// Returns whether either tx or rx is busy
             pub fn busy(&self) -> bool {
                 self.regs.${concat(uart, $n, _stat)}().read().busy().bit_is_set()
+            }
+
+            fn cpu_interrupt_registers(&self) -> &mspm0l222x_pac::${concat(uart, $n)}::${concat(Uart, $n, IntEvent1)} {
+                self.regs.${concat(uart, $n, _int_event1)}(0)
+            }
+
+            /// After changing interrupt registers, the interrupt config must be refreshed
+            fn refresh_interrupt_config(&self) {
+                self.regs
+                    .${concat(uart, $n, _intctl)}()
+                    .write(|w| w.inteval().eval());
+            }
+
+            pub fn enable_rx_threshold_interrupt(&self, threshold: RxInterruptThreshold) {
+                // set rx threshhold level
+                self.regs.${concat(uart, $n, _ifls)}().modify(|_, w| unsafe {
+                    w.rxiflsel().bits(threshold.bits())
+                });
+
+                // unmask cpu interrupt
+                // int_event1(0) is cpu interrupts registers, others are DMA interrupt registers
+                self.cpu_interrupt_registers()
+                    .${concat(uart, $n, _int_event1_imask)}()
+                    .modify(|_, w| w.rxint().set_());
+
+                self.refresh_interrupt_config();
+            }
+
+            pub fn disable_rx_threshold_interrupt(&self) {
+                // mask rx interrupt
+                self.cpu_interrupt_registers()
+                    .${concat(uart, $n, _int_event1_imask)}()
+                    .modify(|_, w| w.rxint().clr());
+
+                self.refresh_interrupt_config();
+            }
+
+            pub fn interrupt_cause(&self) -> Option<InterruptCause> {
+                let mis = self.cpu_interrupt_registers()
+                    .${concat(uart, $n, _int_event1_mis)}()
+                    .read();
+
+                if mis.rtout().is_set() {
+                    Some(InterruptCause::Timeout)
+                } else if mis.rxint().is_set() {
+                    Some(InterruptCause::Threshold)
+                } else if mis.bits() != 0 {
+                    Some(InterruptCause::Unknown)
+                } else {
+                    // if masked interrupt status is 0, no interrupt have occured
+                    None
+                }
+            }
+
+            pub fn clear_interrupt_cause(&self, cause: InterruptCause) {
+                let iclr = self.cpu_interrupt_registers()
+                    .${concat(uart, $n, _int_event1_iclr)}();
+
+                match cause {
+                    InterruptCause::Timeout => {
+                        iclr.write(|w| w.rtout().clr());
+                    }
+                    InterruptCause::Threshold => {
+                        iclr.write(|w| w.rxint().clr());
+                    }
+                    InterruptCause::Unknown => {
+                        // reading iidx clears next interrupt if cause is unknown
+                        self.cpu_interrupt_registers()
+                            .${concat(uart, $n, _int_event1_iidx)}()
+                            .read();
+                    }
+                }
             }
         }
     };
