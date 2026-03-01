@@ -193,11 +193,11 @@ macro_rules! uart_impl {
             /// Keeps reading bytes until the slice is filled up or the uart has no more bytes left to read.
             ///
             /// Returns the number of bytes read
-            pub fn read_bytes_until_empty(&self, buffer: &mut [u8]) -> Result<usize, HalError> {
+            pub fn read_bytes_until_empty(&self, bytes: &mut [u8]) -> Result<usize, HalError> {
                 let mut count = 0;
 
                 for b in bytes.iter_mut() {
-                    if uart.regs.${concat(uart, $n, stat)}().read().rxfe().bit_is_set() {
+                    if self.regs.${concat(uart, $n, _stat)}().read().rxfe().bit_is_set() {
                         break;
                     }
 
