@@ -213,8 +213,8 @@ macro_rules! uart_impl {
                 self.regs.${concat(uart, $n, _stat)}().read().busy().bit_is_set()
             }
 
-            fn cpu_interrupt_registers(&self) -> &mspm0l222x_pac::${concat(uart, $n)}::${concat(Uart, $n, IntEvent1)} {
-                self.regs.${concat(uart, $n, _int_event1)}(0)
+            fn cpu_interrupt_registers(&self) -> &mspm0l222x_pac::${concat(uart, $n)}::${concat(Uart, $n, IntEvent0)} {
+                self.regs.${concat(uart, $n, _int_event0)}(0)
             }
 
             /// After changing interrupt registers, the interrupt config must be refreshed
@@ -231,9 +231,9 @@ macro_rules! uart_impl {
                 });
 
                 // unmask cpu interrupt
-                // int_event1(0) is cpu interrupts registers, others are DMA interrupt registers
+                // int_event0(0) is cpu interrupts registers, others are DMA interrupt registers
                 self.cpu_interrupt_registers()
-                    .${concat(uart, $n, _int_event1_imask)}()
+                    .${concat(uart, $n, _int_event0_imask)}()
                     .modify(|_, w| w.rxint().set_());
 
                 self.refresh_interrupt_config();
@@ -242,7 +242,7 @@ macro_rules! uart_impl {
             pub fn disable_rx_threshold_interrupt(&self) {
                 // mask rx interrupt
                 self.cpu_interrupt_registers()
-                    .${concat(uart, $n, _int_event1_imask)}()
+                    .${concat(uart, $n, _int_event0_imask)}()
                     .modify(|_, w| w.rxint().clr());
 
                 self.refresh_interrupt_config();
@@ -250,7 +250,7 @@ macro_rules! uart_impl {
 
             pub fn interrupt_cause(&self) -> Option<InterruptCause> {
                 let mis = self.cpu_interrupt_registers()
-                    .${concat(uart, $n, _int_event1_mis)}()
+                    .${concat(uart, $n, _int_event0_mis)}()
                     .read();
 
                 if mis.rtout().is_set() {
@@ -267,7 +267,7 @@ macro_rules! uart_impl {
 
             pub fn clear_interrupt_cause(&self, cause: InterruptCause) {
                 let iclr = self.cpu_interrupt_registers()
-                    .${concat(uart, $n, _int_event1_iclr)}();
+                    .${concat(uart, $n, _int_event0_iclr)}();
 
                 match cause {
                     InterruptCause::Timeout => {
@@ -279,7 +279,7 @@ macro_rules! uart_impl {
                     InterruptCause::Unknown => {
                         // reading iidx clears next interrupt if cause is unknown
                         self.cpu_interrupt_registers()
-                            .${concat(uart, $n, _int_event1_iidx)}()
+                            .${concat(uart, $n, _int_event0_iidx)}()
                             .read();
                     }
                 }
