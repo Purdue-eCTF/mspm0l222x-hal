@@ -50,6 +50,10 @@ impl Instant {
             time_since_boot: Duration::from_micros(total_microseconds),
         }
     }
+
+    pub fn time_since_boot(&self) -> Duration {
+        self.time_since_boot
+    }
 }
 
 impl Add<Duration> for Instant {
