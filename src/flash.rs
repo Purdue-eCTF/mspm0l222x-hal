@@ -1,4 +1,4 @@
-use core::mem::size_of_val;
+use core::{cmp::max, mem::size_of_val};
 use cortex_m::asm::nop;
 use mspm0l222x_pac::Flashctl;
 use once_cell::sync::OnceCell;
@@ -308,7 +308,7 @@ impl FlashController {
         if in_8kb_region {
             // the first 4 bits correspond to same sectors as weprotA,
             // so we can ignore everything below end_1kb
-            let start = end_1kb_per / (8 * flash_page);
+            let start = max(end_1kb_per, address) / (8 * flash_page);
             let end = (address + size).div_ceil(8 * flash_page);
             let mask: u32 = (start..end).map(|i| 1 << i).sum();
             self.controller.flashctl_cmdweprotb().modify(|r, w| {

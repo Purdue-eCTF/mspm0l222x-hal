@@ -22,8 +22,8 @@ pub const RTCCLK_FREQUENCY: u32 = 32_000;
 pub const PWREN_WRITE_KEY: u32 = 0x26000000;
 pub const RSTCTL_WRITE_KEY: u32 = 0xB1000000;
 
-pub const FLASH_SIZE: u32 = 1 << 15;
-pub const SRAM_SIZE: u32 = 1 << 18;
+pub const SRAM_SIZE: u32 = 1 << 15;
+pub const FLASH_SIZE: u32 = 1 << 18;
 
 pub use mspm0l222x_pac::{self, CorePeripherals, Peripherals};
 pub use trng::Trng;

@@ -11,8 +11,7 @@ pub struct Led {
     gpiob: Gpiob,
 }
 
-// TODO: is this fine?
-unsafe impl Send for Led {}
+// SAFETY: since this microcontroller only has one thread, this is fine
 unsafe impl Sync for Led {}
 
 pub enum LedColor {

@@ -214,7 +214,7 @@ impl Mpu {
         if addr == 0 {
             return Err(MpuError::ZeroLength.into());
         }
-        if u32::from(addr) >= crate::SRAM_SIZE {
+        if u32::from(addr) > crate::SRAM_SIZE {
             return Err(MpuError::PastBoundary(u32::from(addr)).into());
         }
 

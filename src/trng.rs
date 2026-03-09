@@ -41,8 +41,9 @@ impl Trng {
             nop();
         }
 
-        // TODO: why this particular division?
-        this.trng.trng_clkdivide().write(|w| w.ratio().div_by_4());
+        // TRNG is supposed to operate between 9.5mhz and 25mhz, so divide 32mhz system clock by 2
+        // to get 16mhz
+        this.trng.trng_clkdivide().write(|w| w.ratio().div_by_2());
 
         this.trng.trng_ctl().write(|w| w.cmd().norm_func());
         this.wait_for_cmd_done();
@@ -139,12 +140,20 @@ impl Trng {
     // returns the raw 32 bit TRNG output word
     pub fn word(&self) -> u32 {
         // verify FSM is not in error state due to runtime health fail
-        // TODO: from docs:
+
+        // from docs:
         // Current state of the front end FSM (behind a clock domain crossing).
         // 2 reads are REQUIRED as there is a chance of metastability when
         // reading this
 
-        if self.trng.trng_stat().read().fsm_state().bits() == 0xA {
+        let mut a = self.trng.trng_stat().read().fsm_state().bits();
+        let mut b = self.trng.trng_stat().read().fsm_state().bits();
+        while a != b {
+            a = self.trng.trng_stat().read().fsm_state().bits();
+            b = self.trng.trng_stat().read().fsm_state().bits();
+        }
+
+        if a == 0xA {
             panic!("TRNG Health Fail");
         }
 

@@ -76,7 +76,6 @@ macro_rules! uart_impl {
             regs: mspm0l222x_pac::${concat(Uart, $n)},
         }
 
-        // TODO: is this fine?
         unsafe impl Sync for ${concat(Uart, $n)} {}
 
         impl ${concat(Uart, $n)} {
