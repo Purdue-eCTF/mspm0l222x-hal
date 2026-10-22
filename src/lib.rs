@@ -28,6 +28,9 @@ pub const FLASH_SIZE: u32 = 1 << 18;
 pub use mspm0l222x_pac::{self, CorePeripherals, Peripherals};
 pub use trng::Trng;
 
+pub use cortex_m;
+pub use cortex_m_rt;
+
 #[derive(Debug, Error)]
 pub enum HalError {
     #[error("Unknown error")]
